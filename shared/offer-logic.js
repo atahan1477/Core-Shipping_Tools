@@ -1,4 +1,4 @@
-import { TERM_BEHAVIOR } from './config.js';
+import { getRuntimeTermBehavior } from './config.js';
 
 export function trimmed(value) {
   return (value || '').trim();
@@ -17,6 +17,203 @@ export function buildAutoVesselSpecs(vessel, vesselSpecsMap = {}) {
   if (!base || !specs) return '';
   const separator = base.length > 16 ? '----------------------' : '---------------';
   return `${vesselFinal(base).toUpperCase()}\n${separator}\n${specs}`;
+}
+
+export function parseSelectedSpecFieldIds(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => trimmed(item)).filter(Boolean);
+  }
+  return String(value || '')
+    .split(',')
+    .map((item) => trimmed(item))
+    .filter(Boolean);
+}
+
+function splitSpecLines(specsText) {
+  return trimmed(specsText)
+    .split(/\n+/)
+    .map((line) => trimmed(line))
+    .filter(Boolean);
+}
+
+function splitSegments(line) {
+  return String(line || '')
+    .split(/\s*[\/|–—-]\s*/)
+    .map((segment) => trimmed(segment))
+    .filter(Boolean);
+}
+
+function unique(values) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function cleanJoinedValue(values) {
+  return unique(values).join(' / ');
+}
+
+function normalizeFlag(segment) {
+  let match = segment.match(/^FLAG\s+(.+)$/i);
+  if (match) return trimmed(match[1]);
+
+  match = segment.match(/^(.+?)\s+FLAG$/i);
+  if (match) return trimmed(match[1]);
+
+  return '';
+}
+
+function normalizeType(segment) {
+  const upper = segment.toUpperCase();
+  if (/\bMPP\b/.test(upper)) return 'MPP';
+  if (/\bGENERAL\s+CARGO\b/.test(upper) || /\bSHIP\s+TYPE\s+GENERAL\s+CARGO\b/.test(upper)) return 'General Cargo';
+  if (/^G\/C$/i.test(segment) || /\bG\/C\b/i.test(segment)) return 'General Cargo';
+  return '';
+}
+
+function normalizeClass(segment) {
+  const upper = segment.toUpperCase();
+  if (
+    /CLASS/.test(upper)
+    || /^KR\(IACS\)$/i.test(segment)
+    || /^PRS$/i.test(segment)
+    || /^INMB$/i.test(segment)
+    || /^PHRS$/i.test(segment)
+    || /KOREAN REGISTER/i.test(segment)
+    || /BULGARIAN CLASS/i.test(segment)
+  ) {
+    return segment;
+  }
+  return '';
+}
+
+function extractBuiltImo(lines) {
+  const joined = lines.join(' / ');
+  const builtMatch = joined.match(/\b(?:BUILT|BLT)\s*(\d{4})\b/i) || joined.match(/\b(\d{4})\s*(?:BUILT|BLT)\b/i);
+  const imoMatch = joined.match(/\bIMO\s*[:#-]?\s*(\d{7})\b/i);
+
+  const parts = [];
+  if (builtMatch) parts.push(`Built ${builtMatch[1]}`);
+  if (imoMatch) parts.push(`IMO ${imoMatch[1]}`);
+  return cleanJoinedValue(parts);
+}
+
+function extractByLinePatterns(lines, patterns) {
+  return lines.filter((line) => patterns.some((pattern) => pattern.test(line)));
+}
+
+function extractBySegmentPatterns(lines, patterns) {
+  const results = [];
+  lines.forEach((line) => {
+    splitSegments(line).forEach((segment) => {
+      if (patterns.some((pattern) => pattern.test(segment))) {
+        results.push(segment);
+      }
+    });
+  });
+  return unique(results);
+}
+
+function extractDimensions(lines) {
+  const joined = lines.join(' / ');
+  const parts = [];
+
+  const loa = joined.match(/\bLOA\s*[: ]*([\d.,]+\s*(?:M|MTR|MTRS|METERS?)?)/i);
+  const lbp = joined.match(/\bLBP\s*[: ]*([\d.,]+\s*(?:M|MTR|MTRS|METERS?)?)/i);
+  const beam = joined.match(/\b(?:BEAM|BREADTH)\s*[: ]*([\d.,]+\s*(?:M|MTR|MTRS|METERS?)?)/i);
+  const depth = joined.match(/\bDEPTH\s*[: ]*([\d.,]+\s*(?:M|MTR|MTRS|METERS?)?)/i);
+
+  if (loa) parts.push(`LOA ${trimmed(loa[1])}`);
+  if (lbp) parts.push(`LBP ${trimmed(lbp[1])}`);
+  if (beam) parts.push(`Beam ${trimmed(beam[1])}`);
+  if (depth) parts.push(`Depth ${trimmed(depth[1])}`);
+
+  return cleanJoinedValue(parts);
+}
+
+function extractDraft(lines) {
+  const results = [];
+  const joined = lines.join(' / ');
+
+  const patterns = [
+    /SUMMER\s+DRAFT\s*[: ]*([\d.,]+\s*M)/ig,
+    /DRAFT\s+IN\s+BALLAST\s*[: ]*([\d.,]+\s*M)/ig,
+    /AIR\s+DRAFT\s*[: ]*([\d.,]+\s*M)/ig,
+    /\bDRAFT\s*[: ]*([\d.,]+\s*M)/ig,
+    /ON\s*([\d.,]+\s*M)\s*(SSWD|SSW|SW)\b/ig
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(joined))) {
+      if (match[2]) {
+        results.push(`${trimmed(match[1])} ${trimmed(match[2])}`);
+      } else if (/SUMMER\s+DRAFT/i.test(match[0])) {
+        results.push(`Summer Draft ${trimmed(match[1])}`);
+      } else if (/DRAFT\s+IN\s+BALLAST/i.test(match[0])) {
+        results.push(`Draft in Ballast ${trimmed(match[1])}`);
+      } else if (/AIR\s+DRAFT/i.test(match[0])) {
+        results.push(`Air Draft ${trimmed(match[1])}`);
+      } else {
+        results.push(`Draft ${trimmed(match[1])}`);
+      }
+    }
+  }
+
+  return cleanJoinedValue(results);
+}
+
+export function parseSelectedVesselSpecValues(specsText) {
+  const lines = splitSpecLines(specsText);
+  const segments = lines.flatMap(splitSegments);
+  return {
+    built_imo: extractBuiltImo(lines),
+    type: cleanJoinedValue(segments.map(normalizeType).filter(Boolean)),
+    flag: cleanJoinedValue(segments.map(normalizeFlag).filter(Boolean)),
+    class: cleanJoinedValue(segments.map(normalizeClass).filter(Boolean)),
+    pni: cleanJoinedValue(extractBySegmentPatterns(lines, [/P&I/i])),
+    dwt: cleanJoinedValue(extractByLinePatterns(lines, [/\b(DWT|DWCC|DWAT|DEADWEIGHT)\b/i])),
+    gt_nt: cleanJoinedValue(extractBySegmentPatterns(lines, [/\b(GT|GRT|NT|NRT)\b/i])),
+    dimensions: extractDimensions(lines),
+    draft: extractDraft(lines),
+    grain_bale: cleanJoinedValue(extractByLinePatterns(lines, [/\b(GRAIN|BALE|GR-BL|G\/B)\b/i])),
+    hold_hatch: cleanJoinedValue(extractByLinePatterns(lines, [/\b(HO\/HA|\d+HO\/?\d*HA|HOLD\b|HATCH\b|CARGO HOLDS?)\b/i]).filter((line) => !/HATCH\s+COVERS?|HATCH\s+TYPE/i.test(line))),
+    gear: cleanJoinedValue(extractByLinePatterns(lines, [/\b(GEARED|GEARLESS|GLESS|CRANES?)\b/i])),
+    hatch_covers: cleanJoinedValue(extractByLinePatterns(lines, [/HATCH\s+COVERS?|HATCH\s+TYPE|MACGREGOR|PONTOON|SINGLE\s+PULL|FOLDING\s+TYPE|KVAERNER/i])),
+    fittings: cleanJoinedValue(extractByLinePatterns(lines, [/OPEN\s+HATCH|\bBOX\b|\bSID\b|DOUBLE\s+SKIN|DOUBLE\s+HULL|BOW\s+THRUSTER|BULKHEAD|CONTAINER|REEFER|LASHING|DANGEROUS\s+GOODS|IMO\s+1\b|IMO\s+FITTED|ITF\s+FITTED|APP\.?B|TEU|EQUIPPED|GANTRY\s+CRANE/i])),
+    ada: cleanJoinedValue(extractByLinePatterns(lines, [/\bADA\b/i]))
+  };
+}
+
+export function getVesselStructuredValues(vessel, runtimeConfig) {
+  const base = trimmed(vessel);
+  const fromStructured = runtimeConfig?.vesselStructuredSpecs?.[base] || {};
+  const fallback = parseSelectedVesselSpecValues(runtimeConfig?.vesselSpecs?.[base] || '');
+  const result = {};
+
+  (runtimeConfig?.vesselSpecFieldOptions || []).forEach((field) => {
+    result[field.id] = trimmed(fromStructured[field.id]) || trimmed(fallback[field.id]) || '';
+  });
+
+  return result;
+}
+
+export function buildSelectedVesselSpecsBlock(vessel, runtimeConfig, selectedFieldIds = []) {
+  const base = trimmed(vessel);
+  if (!base) return '';
+
+  const fieldIds = parseSelectedSpecFieldIds(selectedFieldIds);
+  if (!fieldIds.length) return '';
+
+  const fieldOptions = runtimeConfig?.vesselSpecFieldOptions || [];
+  const values = getVesselStructuredValues(base, runtimeConfig);
+  const separator = base.length > 16 ? '----------------------' : '---------------';
+  const lines = fieldIds.map((id) => {
+    const field = fieldOptions.find((option) => option.id === id);
+    const label = field?.label || id;
+    const value = trimmed(values[id]) || '-';
+    return `${label}: ${value}`;
+  });
+
+  return `${vesselFinal(base).toUpperCase()}\n${separator}\n${lines.join('\n')}`;
 }
 
 export function normalizePort(value, suffix) {
@@ -58,7 +255,8 @@ export function clauseLinesFromText(value) {
 }
 
 export function getTermBehavior(term) {
-  return TERM_BEHAVIOR[trimmed(term)] || {
+  const termBehavior = getRuntimeTermBehavior();
+  return termBehavior[trimmed(term)] || {
     mode: 'laytime',
     meaning: `${trimmed(term)} selected.`,
     structure: 'Selected structure: day-based loading / discharging laytime fields.'
@@ -315,17 +513,19 @@ export function buildHtmlEmailDocument(data) {
     ? `
           <tr>
             <td style="padding:12px 32px 0 32px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #cad5df; border-collapse:collapse;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate; border-spacing:0;">
                 <tr>
-                  <td style="padding:14px 18px; background-color:#eef3f8; border-bottom:1px solid #cad5df;">
-                    <div style="font-size:18px; font-weight:700; color:#0f2742;">${escapeHtml(vesselSpecs.title || 'Vessel Particulars')}</div>
-                    <div style="font-size:12px; color:#5b6b7c; padding-top:4px;">Selected vessel specs block</div>
+                  <td style="padding:0;">
+                    <div style="border:1px solid #cad5df; border-radius:14px; overflow:hidden; background:linear-gradient(180deg, #f7fafc 0%, #ffffff 100%); box-shadow:0 6px 18px rgba(15, 39, 66, 0.06);">
+                      <div style="padding:14px 18px; background-color:#eef3f8; border-bottom:1px solid #d8e1ea;">
+                        <div style="font-size:18px; font-weight:700; color:#0f2742;">${escapeHtml(vesselSpecs.title || 'Vessel Particulars')}</div>
+                      </div>
+                      <div style="padding:14px 18px; font-size:14px; line-height:1.7; color:#17314e;">
+                        ${vesselSpecs.lines.map((line) => `<div style="margin:0 0 6px 0;">${textToHtml(line)}</div>`).join('')}
+                      </div>
+                    </div>
                   </td>
                 </tr>
-                ${vesselSpecs.lines.map((line) => `
-                <tr>
-                  <td style="padding:11px 18px; border-bottom:1px solid #e2e8ef; font-size:14px; line-height:1.6; color:#17314e;">${textToHtml(line)}</td>
-                </tr>`).join('')}
               </table>
             </td>
           </tr>`

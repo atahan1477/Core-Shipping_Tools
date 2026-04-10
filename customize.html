@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Core Shipping | Customize Generator</title>
+  <style>
+    :root {
+      --bg-1: #edf2f7;
+      --bg-2: #e4edf6;
+      --panel: rgba(255,255,255,0.94);
+      --border: #d7e0eb;
+      --border-strong: #c3cfde;
+      --text: #17314e;
+      --muted: #667b93;
+      --navy: #16355d;
+      --navy-2: #244873;
+      --gold: #caa25d;
+      --danger: #a53434;
+      --success: #166a52;
+      --shadow: 0 18px 42px rgba(16, 40, 70, 0.14);
+      --shadow-soft: 0 10px 24px rgba(16, 40, 70, 0.10);
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 18px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(22,53,93,0.10), transparent 22%),
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 100%);
+    }
+
+    .page {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 14px;
+    }
+
+    .top-links, .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .top-links { justify-content: space-between; }
+
+    .top-link, button {
+      appearance: none;
+      border: 0;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .top-link, .secondary {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff, #f6f9fc);
+      color: var(--navy);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .primary {
+      color: #fff;
+      background: linear-gradient(180deg, var(--navy-2), var(--navy));
+      box-shadow: 0 10px 22px rgba(20, 52, 91, 0.18);
+    }
+
+    .accent {
+      background: linear-gradient(180deg, #d8b46f, var(--gold));
+      color: #162b43;
+      box-shadow: 0 10px 18px rgba(191, 146, 69, 0.20);
+    }
+
+    .danger {
+      color: #fff;
+      background: linear-gradient(180deg, #c95555, #a53434);
+      box-shadow: 0 10px 18px rgba(165, 52, 52, 0.22);
+    }
+
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.86);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      overflow: hidden;
+    }
+
+    .hero {
+      padding: 22px 24px;
+      background: linear-gradient(180deg, rgba(22,53,93,0.08), rgba(255,255,255,0.30));
+    }
+
+    h1 { margin: 0 0 8px; font-size: clamp(2rem, 3vw, 2.8rem); letter-spacing: -0.04em; }
+    p { margin: 0; color: var(--muted); line-height: 1.65; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 58%) minmax(0, 42%);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .column { display: grid; gap: 14px; }
+    .sticky { position: sticky; top: 18px; }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(22,53,93,0.06), rgba(255,255,255,0.22));
+    }
+
+    .panel-header h2 { margin: 0; font-size: 1rem; }
+    .panel-header span { color: var(--muted); font-size: 0.84rem; }
+
+    .content { padding: 16px; display: grid; gap: 14px; }
+
+    .subsection {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px;
+      background: linear-gradient(180deg, #ffffff, #f7f9fc);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.82);
+      display: grid;
+      gap: 12px;
+    }
+
+    .subsection h3 { margin: 0; font-size: 0.96rem; }
+    .grid, .grid-2 { display: grid; gap: 12px; }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: 1fr; }
+    .field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+
+    label { font-size: 0.8rem; font-weight: 800; color: var(--muted); }
+
+    input, select, textarea {
+      width: 100%;
+      min-width: 0;
+      padding: 11px 12px;
+      border-radius: 13px;
+      border: 1px solid var(--border-strong);
+      background: #fff;
+      color: var(--text);
+      outline: none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.82);
+      font: inherit;
+    }
+
+    textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+    textarea.small { min-height: 80px; }
+    textarea.code { min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.84rem; }
+
+    .inline-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .repeat-list { display: grid; gap: 10px; }
+    .repeat-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .pill {
+      display: inline-flex;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: rgba(22,53,93,0.08);
+      color: var(--navy);
+      font-size: 0.74rem;
+      font-weight: 800;
+    }
+
+    .structured-grid { display: grid; gap: 10px; }
+    .structured-row {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    .structured-row strong { font-size: 0.83rem; line-height: 1.4; }
+    .option-editor { display: grid; gap: 10px; }
+    .option-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      background: #fff;
+      box-shadow: var(--shadow-soft);
+      display: grid;
+      gap: 10px;
+    }
+
+    .status { min-height: 1rem; font-weight: 800; color: var(--success); }
+    .note { color: var(--muted); font-size: 0.78rem; line-height: 1.55; }
+
+    pre.preview {
+      margin: 0;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: #fbfdff;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 520px;
+      overflow: auto;
+      font-size: 0.84rem;
+      line-height: 1.55;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    @media (max-width: 1180px) {
+      .layout { grid-template-columns: 1fr; }
+      .sticky { position: static; }
+    }
+
+    @media (max-width: 860px) {
+      .grid, .structured-row, .repeat-row { grid-template-columns: 1fr; }
+      body { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top-links">
+      <div class="top-actions">
+        <a class="top-link" href="./index.html">← Back to Tools</a>
+        <a class="top-link" href="./firm-generator.html">Open Generator</a>
+      </div>
+      <div class="top-actions">
+        <button type="button" class="secondary" id="loadSavedBtn">Reload Saved</button>
+        <button type="button" class="danger" id="resetAllBtn">Reset Customizations</button>
+        <button type="button" class="accent" id="saveCustomizeBtn">Save Changes</button>
+      </div>
+    </div>
+
+    <section class="hero">
+      <h1>Customize Generator</h1>
+      <p>Use this page to manage the Firm Offer Generator data without editing source code. You can add or remove vessels, change vessel spec fields and labels, update selectables, adjust term meanings, and change generator defaults. Saved changes apply on this domain through browser storage, and you can export or import the full customization JSON.</p>
+    </section>
+
+    <div class="status" id="status"></div>
+
+    <div class="layout">
+      <div class="column">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Vessels & Structured Specs</h2>
+            <span>Manage vessel names, raw source notes, and checkbox field values</span>
+          </div>
+          <div class="content">
+            <div class="subsection">
+              <div class="grid">
+                <div class="field">
+                  <label for="customizerVesselSelect">Vessel</label>
+                  <select id="customizerVesselSelect"></select>
+                </div>
+                <div class="field">
+                  <label>Actions</label>
+                  <div class="inline-actions">
+                    <button type="button" class="secondary" id="addVesselBtn">+ Add vessel</button>
+                    <button type="button" class="danger" id="removeVesselBtn">Remove vessel</button>
+                  </div>
+                </div>
+                <div class="field full">
+                  <label for="customizerVesselName">Selected vessel name</label>
+                  <input id="customizerVesselName" placeholder="MV NEW VESSEL" />
+                </div>
+                <div class="field full">
+                  <label for="customizerRawSpecs">Raw source specs</label>
+                  <textarea id="customizerRawSpecs" placeholder="Paste or keep your raw source spec text here."></textarea>
+                  <div class="note">This raw block is optional as a source note and fallback. The live generator uses the structured field values below for the checkbox output.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <h3>Structured vessel field values</h3>
+              <div class="note">Each field value below belongs to the currently selected vessel. These are the exact values that appear when their checkbox is selected in the generator.</div>
+              <div id="structuredSpecsGrid" class="structured-grid"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Checkbox Spec Fields</h2>
+            <span>Add, rename, or remove vessel spec checkbox items</span>
+          </div>
+          <div class="content">
+            <div class="subsection">
+              <div class="inline-actions">
+                <button type="button" class="secondary" id="addSpecFieldBtn">+ Add field</button>
+              </div>
+              <div id="specFieldList" class="repeat-list"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="column sticky">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Selectables & Conditions</h2>
+            <span>Everything that powers generator dropdowns and term logic</span>
+          </div>
+          <div class="content">
+            <div id="optionEditors" class="option-editor"></div>
+            <div class="subsection">
+              <h3>Term meanings / structures</h3>
+              <div id="termBehaviorList" class="repeat-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Form Defaults</h2>
+            <span>Advanced full default object for the generator</span>
+          </div>
+          <div class="content">
+            <div class="subsection">
+              <div class="note">This JSON controls the starting values of the generator fields. Keep valid JSON object format.</div>
+              <textarea id="defaultsJson" class="code"></textarea>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Import / Export</h2>
+            <span>Backup or move your custom generator setup</span>
+          </div>
+          <div class="content">
+            <div class="subsection">
+              <div class="inline-actions">
+                <button type="button" class="secondary" id="exportJsonBtn">Export Current JSON</button>
+                <button type="button" class="primary" id="importJsonBtn">Import JSON</button>
+              </div>
+              <textarea id="customizationJson" class="code" placeholder="Exported customization JSON will appear here. You can also paste JSON here and import it."></textarea>
+            </div>
+            <div class="subsection">
+              <h3>Current customization preview</h3>
+              <pre id="currentPreview" class="preview"></pre>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/customize-app.js"></script>
+</body>
+</html>
