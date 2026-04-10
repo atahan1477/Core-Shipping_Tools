@@ -1,11 +1,10 @@
-import { getRuntimeConfig, subscribeToRuntimeCustomization } from '../shared/config.js';
+import { config } from '../shared/config.js';
 import {
+  buildAutoVesselSpecs,
   buildEmailText,
   buildHtmlEmailDocument,
   buildMailtoUrl,
-  buildSelectedVesselSpecsBlock,
   getTermBehavior,
-  parseSelectedSpecFieldIds,
   trimmed
 } from '../shared/offer-logic.js';
 import {
@@ -16,8 +15,6 @@ import {
 
 const APP_SOURCE = `firm-offer-app:${Math.random().toString(36).slice(2)}`;
 const THEME_STORAGE_KEY = 'firmOfferGeneratorTheme';
-
-let runtimeConfig = getRuntimeConfig();
 
 const form = document.getElementById('offerForm');
 const subjectPreview = document.getElementById('subjectPreview');
@@ -34,11 +31,7 @@ const dischargingTextLabel = document.getElementById('dischargingTextLabel');
 const termMeaningNote = document.getElementById('termMeaningNote');
 const termStructureNote = document.getElementById('termStructureNote');
 const vesselSelect = document.getElementById('vessel');
-const includeVesselSpecsInput = document.getElementById('includeVesselSpecs');
 const vesselSpecsField = document.getElementById('vesselSpecs');
-const selectedSpecFieldsInput = document.getElementById('selectedVesselSpecFields');
-const vesselSpecFieldGrid = document.getElementById('vesselSpecFieldGrid');
-const vesselSpecsPreview = document.getElementById('vesselSpecsPreview');
 const themeToggle = document.getElementById('themeToggle');
 const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
 
@@ -46,56 +39,34 @@ const fieldElements = Array.from(form.querySelectorAll('input[name], select[name
 const fieldNames = fieldElements.map((element) => element.name);
 
 let currentView = 'raw';
+let vesselSpecsDirty = false;
 let isApplyingExternalState = false;
-
-function currentDefaults() {
-  return runtimeConfig.formDefaults || {};
-}
 
 function fillSelect(id, options, selectedValue) {
   const select = document.getElementById(id);
   if (!select) return;
 
-  const safeOptions = Array.isArray(options) && options.length ? options : [selectedValue || ''];
-  const finalSelected = safeOptions.includes(selectedValue) ? selectedValue : safeOptions[0] || '';
-
   select.innerHTML = '';
-  safeOptions.forEach((option) => {
+  options.forEach((option) => {
     const el = document.createElement('option');
     el.value = option;
     el.textContent = option;
-    if (option === finalSelected) el.selected = true;
+    if (option === selectedValue) el.selected = true;
     select.appendChild(el);
   });
 }
 
-function initializeSelects(preferredValues = {}) {
-  const defaults = currentDefaults();
-  fillSelect('vessel', runtimeConfig.vesselOptions, preferredValues.vessel || defaults.vessel);
-  fillSelect('underDeck', runtimeConfig.underDeckOptions, preferredValues.underDeck || defaults.underDeck);
-  fillSelect('cargoStackable', runtimeConfig.cargoStackableOptions, preferredValues.cargoStackable || defaults.cargoStackable);
-  fillSelect('currency', runtimeConfig.currencyOptions, preferredValues.currency || defaults.currency);
-  fillSelect('freightTerms', runtimeConfig.freightTermsOptions, preferredValues.freightTerms || defaults.freightTerms);
-  fillSelect('terms', runtimeConfig.termsOptions, preferredValues.terms || defaults.terms);
-  fillSelect('loadingTerms', runtimeConfig.laytimeTermsOptions, preferredValues.loadingTerms || defaults.loadingTerms);
-  fillSelect('dischargingTerms', runtimeConfig.laytimeTermsOptions, preferredValues.dischargingTerms || defaults.dischargingTerms);
-  fillSelect('agentLoad', runtimeConfig.agentOptions, preferredValues.agentLoad || defaults.agentLoad);
-  fillSelect('agentDischarge', runtimeConfig.agentOptions, preferredValues.agentDischarge || defaults.agentDischarge);
-}
-
-function applyTextDefaults(preferredValues = {}) {
-  const defaults = { ...currentDefaults(), ...preferredValues };
-
-  fieldElements.forEach((element) => {
-    if (!element.name || element.tagName === 'SELECT') return;
-    if (!(element.name in defaults)) return;
-
-    if (element.type === 'checkbox') {
-      element.checked = Boolean(defaults[element.name]);
-    } else {
-      element.value = String(defaults[element.name] ?? '');
-    }
-  });
+function initializeSelects() {
+  fillSelect('vessel', config.vesselOptions, config.defaults.vessel);
+  fillSelect('underDeck', config.underDeckOptions, config.defaults.underDeck);
+  fillSelect('cargoStackable', config.cargoStackableOptions, config.defaults.cargoStackable);
+  fillSelect('currency', config.currencyOptions, config.defaults.currency);
+  fillSelect('freightTerms', config.freightTermsOptions, config.defaults.freightTerms);
+  fillSelect('terms', config.termsOptions, config.defaults.terms);
+  fillSelect('loadingTerms', config.laytimeTermsOptions, config.defaults.loadingTerms);
+  fillSelect('dischargingTerms', config.laytimeTermsOptions, config.defaults.dischargingTerms);
+  fillSelect('agentLoad', config.agentOptions, config.defaults.agentLoad);
+  fillSelect('agentDischarge', config.agentOptions, config.defaults.agentDischarge);
 }
 
 function getFieldElement(name) {
@@ -116,64 +87,6 @@ function collectFormData() {
   return data;
 }
 
-function renderVesselSpecFieldToggles() {
-  if (!vesselSpecFieldGrid) return;
-
-  vesselSpecFieldGrid.innerHTML = '';
-
-  runtimeConfig.vesselSpecFieldOptions.forEach((option) => {
-    const label = document.createElement('label');
-    label.className = 'spec-check-item';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.dataset.specKey = option.id;
-
-    const text = document.createElement('span');
-    text.textContent = option.label;
-
-    label.appendChild(checkbox);
-    label.appendChild(text);
-    vesselSpecFieldGrid.appendChild(label);
-  });
-}
-
-function getSelectedSpecFieldIds() {
-  return Array.from(vesselSpecFieldGrid?.querySelectorAll('input[data-spec-key]:checked') || [])
-    .map((element) => element.dataset.specKey)
-    .filter(Boolean);
-}
-
-function setSelectedSpecFieldIds(value) {
-  const requested = parseSelectedSpecFieldIds(Array.isArray(value) ? value.join(',') : value);
-  const validIds = runtimeConfig.vesselSpecFieldOptions.map((option) => option.id);
-  const fallbackIds = parseSelectedSpecFieldIds(currentDefaults().selectedVesselSpecFields).filter((id) => validIds.includes(id));
-  const activeIds = (requested.filter((id) => validIds.includes(id)).length ? requested : fallbackIds);
-
-  if (selectedSpecFieldsInput) {
-    selectedSpecFieldsInput.value = activeIds.join(',');
-  }
-
-  Array.from(vesselSpecFieldGrid?.querySelectorAll('input[data-spec-key]') || []).forEach((element) => {
-    element.checked = activeIds.includes(element.dataset.specKey);
-  });
-}
-
-function syncStructuredVesselSpecs() {
-  if (!vesselSpecsField || !vesselSelect) return;
-
-  const selectedIds = getSelectedSpecFieldIds();
-  const generatedBlock = buildSelectedVesselSpecsBlock(vesselSelect.value, runtimeConfig, selectedIds);
-
-  selectedSpecFieldsInput.value = selectedIds.join(',');
-  vesselSpecsField.value = generatedBlock;
-  includeVesselSpecsInput.checked = Boolean(selectedIds.length && trimmed(generatedBlock));
-
-  if (vesselSpecsPreview) {
-    vesselSpecsPreview.textContent = generatedBlock || 'Select checkbox items to generate the vessel specs block.';
-  }
-}
-
 function applySnapshotToForm(snapshot) {
   isApplyingExternalState = true;
 
@@ -182,21 +95,28 @@ function applySnapshotToForm(snapshot) {
       const element = getFieldElement(name);
       if (!element || !(name in snapshot)) return;
 
-      if (element.tagName === 'SELECT') return;
-
       if (element.type === 'checkbox') {
         element.checked = Boolean(snapshot[name]);
-      } else {
+      } else if (element.value !== String(snapshot[name] ?? '')) {
         element.value = String(snapshot[name] ?? '');
       }
     });
 
-    initializeSelects(snapshot);
-    setSelectedSpecFieldIds(snapshot.selectedVesselSpecFields || selectedSpecFieldsInput.value || currentDefaults().selectedVesselSpecFields);
-    syncStructuredVesselSpecs();
+    const selectedVessel = vesselSelect?.value || '';
+    const currentSpecs = vesselSpecsField?.value || '';
+    const autoSpecs = buildAutoVesselSpecs(selectedVessel, config.vesselSpecs);
+    vesselSpecsDirty = Boolean(currentSpecs && currentSpecs !== autoSpecs);
   } finally {
     isApplyingExternalState = false;
   }
+}
+
+function syncVesselSpecsFromSelection(force = false) {
+  if (!vesselSpecsField || !vesselSelect) return;
+  if (vesselSpecsDirty && !force) return;
+
+  vesselSpecsField.value = buildAutoVesselSpecs(vesselSelect.value, config.vesselSpecs);
+  vesselSpecsDirty = false;
 }
 
 function updateConditionalUI() {
@@ -320,7 +240,6 @@ function refreshHtmlPreview() {
 
 function refreshPreview() {
   updateConditionalUI();
-  syncStructuredVesselSpecs();
 
   const data = collectFormData();
   const emailText = buildEmailText(data);
@@ -435,51 +354,42 @@ function initializeSharedState() {
   });
 }
 
-function reinitializeForCustomizationChange() {
-  const currentData = collectFormData();
-  runtimeConfig = getRuntimeConfig();
-
-  renderVesselSpecFieldToggles();
-  initializeSelects(currentData);
-  applyTextDefaults(currentData);
-  setSelectedSpecFieldIds(currentData.selectedVesselSpecFields || currentDefaults().selectedVesselSpecFields);
-  syncStructuredVesselSpecs();
-  pushWholeFormToStore();
-  refreshPreview();
-}
-
 function handleAnyInput(event) {
   if (isApplyingExternalState) return;
 
   const target = event.target;
-  if (!target || !('name' in target || target.dataset?.specKey)) return;
+  if (!target || !('name' in target)) return;
 
-  if (target.id === 'vessel' || target.dataset.specKey) {
-    syncStructuredVesselSpecs();
+  if (target.id === 'vessel') {
+    syncVesselSpecsFromSelection(true);
+  }
+
+  if (target.id === 'vesselSpecs') {
+    const autoSpecs = buildAutoVesselSpecs(vesselSelect.value, config.vesselSpecs);
+    vesselSpecsDirty = vesselSpecsField.value !== autoSpecs;
   }
 
   pushWholeFormToStore();
   refreshPreview();
 }
 
-runtimeConfig = getRuntimeConfig();
-renderVesselSpecFieldToggles();
 initializeSelects();
-applyTextDefaults();
-setSelectedSpecFieldIds(currentDefaults().selectedVesselSpecFields);
-syncStructuredVesselSpecs();
+syncVesselSpecsFromSelection(true);
 initializeSharedState();
 initializeTheme();
 refreshPreview();
 
-subscribeToRuntimeCustomization((_, meta = {}) => {
-  if (meta.source === APP_SOURCE) return;
-  reinitializeForCustomizationChange();
-}, { immediate: false });
-
 vesselSelect.addEventListener('change', () => {
   if (isApplyingExternalState) return;
-  syncStructuredVesselSpecs();
+  syncVesselSpecsFromSelection(true);
+  pushWholeFormToStore();
+  refreshPreview();
+});
+
+vesselSpecsField.addEventListener('input', () => {
+  if (isApplyingExternalState) return;
+  const autoSpecs = buildAutoVesselSpecs(vesselSelect.value, config.vesselSpecs);
+  vesselSpecsDirty = vesselSpecsField.value !== autoSpecs;
   pushWholeFormToStore();
   refreshPreview();
 });
@@ -509,32 +419,61 @@ document.getElementById('copyRawBtn').addEventListener('click', async () => {
     } else {
       showStatus('Clipboard not available in this browser.');
     }
-  } catch (_) {
-    showStatus('Copy failed.');
-  }
-});
-
-document.getElementById('copyHtmlBtn').addEventListener('click', async () => {
-  try {
-    const html = buildHtmlEmailDocument(collectFormData());
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(html);
-      showStatus('HTML mail copied to clipboard.');
-    } else {
-      showStatus('Clipboard not available in this browser.');
-    }
-  } catch (_) {
-    showStatus('Copy failed.');
+  } catch (error) {
+    showStatus('Copy failed: ' + (error.message || error));
   }
 });
 
 document.getElementById('openDraftBtn').addEventListener('click', () => {
-  const url = buildMailtoUrl(collectFormData(), { includeBody: true });
-  window.location.href = url;
+  window.location.href = buildMailtoUrl(collectFormData(), { includeBody: true });
+  showStatus('Opening email draft…');
 });
 
-document.getElementById('openDraftHtmlBtn').addEventListener('click', () => {
-  const url = buildMailtoUrl(collectFormData(), { includeBody: false });
-  window.location.href = url;
-  showStatus('Draft opened. Paste the copied HTML into your mail composer.');
+document.getElementById('copyHtmlBtn').addEventListener('click', async () => {
+  try {
+    const htmlDoc = buildHtmlEmailDocument(collectFormData());
+    const bodyMatch = htmlDoc.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    const htmlFrag = bodyMatch ? bodyMatch[1].trim() : htmlDoc;
+    const emailText = buildEmailText(collectFormData());
+
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([htmlFrag], { type: 'text/html' }),
+          'text/plain': new Blob([emailText.body], { type: 'text/plain' })
+        })
+      ]);
+      showStatus('HTML mail copied — paste into Outlook compose.');
+    } else if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(emailText.body);
+      showStatus('Copied as plain text (browser limited HTML clipboard).');
+    } else {
+      showStatus('Clipboard not available in this browser.');
+    }
+  } catch (error) {
+    showStatus('Copy failed: ' + (error.message || error));
+  }
+});
+
+document.getElementById('openDraftHtmlBtn').addEventListener('click', async () => {
+  try {
+    const htmlDoc = buildHtmlEmailDocument(collectFormData());
+    const bodyMatch = htmlDoc.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    const htmlFrag = bodyMatch ? bodyMatch[1].trim() : htmlDoc;
+    const emailText = buildEmailText(collectFormData());
+
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([htmlFrag], { type: 'text/html' }),
+          'text/plain': new Blob([emailText.body], { type: 'text/plain' })
+        })
+      ]);
+    } else if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(emailText.body);
+    }
+  } catch (_) {}
+
+  window.location.href = buildMailtoUrl(collectFormData(), { includeBody: false });
+  showStatus('Draft opened · HTML copied to clipboard → paste into body.');
 });

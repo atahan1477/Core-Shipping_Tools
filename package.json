@@ -1,0 +1,7 @@
+{
+  "name": "core-shipping-tools",
+  "private": true,
+  "dependencies": {
+    "@vercel/blob": "latest"
+  }
+}
