@@ -3,6 +3,7 @@ const CUSTOMIZATION_CHANNEL_NAME = 'core-shipping-generator-customization';
 const REMOTE_CUSTOMIZATION_ENDPOINT = '/api/customization';
 
 let remoteCustomizationSyncPromise = null;
+const LEGACY_DEFAULT_SELECTED_SPEC_FIELDS = ['built_imo', 'type', 'flag', 'class', 'dwt', 'hold_hatch', 'grain_bale', 'gear'];
 
 export const baseConfig = {
   vesselOptions: ["CORE TBN", "MV ATA 1", "MV ANUBIS", "MV ANUNNAKI", "MV ADMIRAL DE RIBAS", "MV MUSTAFA K", "MV GOLDY SEVEN", "MV HORUS", "MV AST RISING", "M/V LDR SAKINE", "MV AST MALTA", "MV AST ECO", "MV FORESTER", "MV LILIBET"],
@@ -177,6 +178,145 @@ function sanitizeFieldOptions(values) {
   return safe.length ? safe : clone(baseConfig.vesselSpecFieldOptions);
 }
 
+function splitSpecLines(specsText) {
+  return trimmed(specsText)
+    .split(/\n+/)
+    .map((line) => trimmed(line))
+    .filter(Boolean);
+}
+
+function splitSegments(line) {
+  return String(line || '')
+    .split(/\s*[\/|–—-]\s*/)
+    .map((segment) => trimmed(segment))
+    .filter(Boolean);
+}
+
+function unique(values) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function cleanJoinedValue(values) {
+  return unique(values).join(' / ');
+}
+
+function normalizeFlag(segment) {
+  let match = segment.match(/^FLAG\s+(.+)$/i);
+  if (match) return trimmed(match[1]);
+  match = segment.match(/^(.+?)\s+FLAG$/i);
+  if (match) return trimmed(match[1]);
+  return '';
+}
+
+function normalizeType(segment) {
+  const upper = segment.toUpperCase();
+  if (/\bMPP\b/.test(upper)) return 'MPP';
+  if (/\bGENERAL\s+CARGO\b/.test(upper) || /\bSHIP\s+TYPE\s+GENERAL\s+CARGO\b/.test(upper)) return 'General Cargo';
+  if (/^G\/C$/i.test(segment) || /\bG\/C\b/i.test(segment)) return 'General Cargo';
+  return '';
+}
+
+function normalizeClass(segment) {
+  const upper = segment.toUpperCase();
+  if (/CLASS/.test(upper) || /^KR\(IACS\)$/i.test(segment) || /^PRS$/i.test(segment) || /^INMB$/i.test(segment) || /^PHRS$/i.test(segment) || /KOREAN REGISTER/i.test(segment) || /BULGARIAN CLASS/i.test(segment)) {
+    return segment;
+  }
+  return '';
+}
+
+function extractBuiltImo(lines) {
+  const joined = lines.join(' / ');
+  const builtMatch = joined.match(/\b(?:BUILT|BLT)\s*(\d{4})\b/i) || joined.match(/\b(\d{4})\s*(?:BUILT|BLT)\b/i);
+  const imoMatch = joined.match(/\bIMO\s*[:#-]?\s*(\d{7})\b/i);
+  const parts = [];
+  if (builtMatch) parts.push(`Built ${builtMatch[1]}`);
+  if (imoMatch) parts.push(`IMO ${imoMatch[1]}`);
+  return cleanJoinedValue(parts);
+}
+
+function extractByLinePatterns(lines, patterns) {
+  return lines.filter((line) => patterns.some((pattern) => pattern.test(line)));
+}
+
+function extractBySegmentPatterns(lines, patterns) {
+  const results = [];
+  lines.forEach((line) => {
+    splitSegments(line).forEach((segment) => {
+      if (patterns.some((pattern) => pattern.test(segment))) {
+        results.push(segment);
+      }
+    });
+  });
+  return unique(results);
+}
+
+function extractDimensions(lines) {
+  const joined = lines.join(' / ');
+  const parts = [];
+  const loa = joined.match(/\bLOA\s*[: ]*([\d.,]+\s*(?:M|MTR|MTRS|METERS?)?)/i);
+  const lbp = joined.match(/\bLBP\s*[: ]*([\d.,]+\s*(?:M|MTR|MTRS|METERS?)?)/i);
+  const beam = joined.match(/\b(?:BEAM|BREADTH)\s*[: ]*([\d.,]+\s*(?:M|MTR|MTRS|METERS?)?)/i);
+  const depth = joined.match(/\bDEPTH\s*[: ]*([\d.,]+\s*(?:M|MTR|MTRS|METERS?)?)/i);
+  if (loa) parts.push(`LOA ${trimmed(loa[1])}`);
+  if (lbp) parts.push(`LBP ${trimmed(lbp[1])}`);
+  if (beam) parts.push(`Beam ${trimmed(beam[1])}`);
+  if (depth) parts.push(`Depth ${trimmed(depth[1])}`);
+  return cleanJoinedValue(parts);
+}
+
+function extractDraft(lines) {
+  const results = [];
+  const joined = lines.join(' / ');
+  const patterns = [
+    /SUMMER\s+DRAFT\s*[: ]*([\d.,]+\s*M)/ig,
+    /DRAFT\s+IN\s+BALLAST\s*[: ]*([\d.,]+\s*M)/ig,
+    /AIR\s+DRAFT\s*[: ]*([\d.,]+\s*M)/ig,
+    /\bDRAFT\s*[: ]*([\d.,]+\s*M)/ig,
+    /ON\s*([\d.,]+\s*M)\s*(SSWD|SSW|SW)\b/ig
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(joined))) {
+      if (match[2]) {
+        results.push(`${trimmed(match[1])} ${trimmed(match[2])}`);
+      } else if (/SUMMER\s+DRAFT/i.test(match[0])) {
+        results.push(`Summer Draft ${trimmed(match[1])}`);
+      } else if (/DRAFT\s+IN\s+BALLAST/i.test(match[0])) {
+        results.push(`Draft in Ballast ${trimmed(match[1])}`);
+      } else if (/AIR\s+DRAFT/i.test(match[0])) {
+        results.push(`Air Draft ${trimmed(match[1])}`);
+      } else {
+        results.push(`Draft ${trimmed(match[1])}`);
+      }
+    }
+  }
+
+  return cleanJoinedValue(results);
+}
+
+function parseLegacySelectedVesselSpecValues(specsText) {
+  const lines = splitSpecLines(specsText);
+  const segments = lines.flatMap(splitSegments);
+  return {
+    built_imo: extractBuiltImo(lines),
+    type: cleanJoinedValue(segments.map(normalizeType).filter(Boolean)),
+    flag: cleanJoinedValue(segments.map(normalizeFlag).filter(Boolean)),
+    class: cleanJoinedValue(segments.map(normalizeClass).filter(Boolean)),
+    pni: cleanJoinedValue(extractBySegmentPatterns(lines, [/P&I/i])),
+    dwt: cleanJoinedValue(extractByLinePatterns(lines, [/\b(DWT|DWCC|DWAT|DEADWEIGHT)\b/i])),
+    gt_nt: cleanJoinedValue(extractBySegmentPatterns(lines, [/\b(GT|GRT|NT|NRT)\b/i])),
+    dimensions: extractDimensions(lines),
+    draft: extractDraft(lines),
+    grain_bale: cleanJoinedValue(extractByLinePatterns(lines, [/\b(GRAIN|BALE|GR-BL|G\/B)\b/i])),
+    hold_hatch: cleanJoinedValue(extractByLinePatterns(lines, [/\b(HO\/HA|\d+HO\/?\d*HA|HOLD\b|HATCH\b|CARGO HOLDS?)\b/i]).filter((line) => !/HATCH\s+COVERS?|HATCH\s+TYPE/i.test(line))),
+    gear: cleanJoinedValue(extractByLinePatterns(lines, [/\b(GEARED|GEARLESS|GLESS|CRANES?)\b/i])),
+    hatch_covers: cleanJoinedValue(extractByLinePatterns(lines, [/HATCH\s+COVERS?|HATCH\s+TYPE|MACGREGOR|PONTOON|SINGLE\s+PULL|FOLDING\s+TYPE|KVAERNER/i])),
+    fittings: cleanJoinedValue(extractByLinePatterns(lines, [/OPEN\s+HATCH|\bBOX\b|\bSID\b|DOUBLE\s+SKIN|DOUBLE\s+HULL|BOW\s+THRUSTER|BULKHEAD|CONTAINER|REEFER|LASHING|DANGEROUS\s+GOODS|IMO\s+1\b|IMO\s+FITTED|ITF\s+FITTED|APP\.?B|TEU|EQUIPPED|GANTRY\s+CRANE/i])),
+    ada: cleanJoinedValue(extractByLinePatterns(lines, [/\bADA\b/i]))
+  };
+}
+
 function toPositiveInt(value, fallback = 0) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
@@ -218,12 +358,12 @@ function sanitizeSpecRowsArray(rows, fallbackRows = []) {
     .map((row, index) => ({ ...row, order: index + 1 }));
 }
 
-function buildLegacyRowsFromObjects(vesselRecord, fieldOptions, defaultSelectedIds = []) {
+function buildLegacyRowsFromObjects(vesselRecord, fieldOptions, defaultSelectedIds = [], parsedFallback = {}) {
   const selected = new Set(defaultSelectedIds);
   const rows = [];
 
   fieldOptions.forEach((field, index) => {
-    const value = trimmed(vesselRecord?.[field.id] || '');
+    const value = trimmed(vesselRecord?.[field.id] || parsedFallback[field.id] || '') || '-';
     const enabled = selected.size ? selected.has(field.id) : Boolean(value);
     rows.push({
       id: field.id,
@@ -249,7 +389,7 @@ function sanitizeVesselSpecsMap(value, vesselOptions) {
   return result;
 }
 
-function sanitizeStructuredSpecs(value, vesselOptions, fieldOptions, defaultSelectedIds = []) {
+function sanitizeStructuredSpecs(value, vesselOptions, fieldOptions, defaultSelectedIds = [], vesselSpecs = {}) {
   const safeValue = value && typeof value === 'object' ? value : {};
   const result = {};
 
@@ -260,7 +400,8 @@ function sanitizeStructuredSpecs(value, vesselOptions, fieldOptions, defaultSele
       return;
     }
 
-    const legacyRows = buildLegacyRowsFromObjects(vesselRecord, fieldOptions, defaultSelectedIds);
+    const parsedFallback = parseLegacySelectedVesselSpecValues(vesselSpecs[vessel] || '');
+    const legacyRows = buildLegacyRowsFromObjects(vesselRecord, fieldOptions, defaultSelectedIds, parsedFallback);
     result[vessel] = sanitizeSpecRowsArray(legacyRows);
   });
 
@@ -321,11 +462,11 @@ function sanitizeCustomization(value) {
   const vesselOptions = uniqueTrimmedList(source.vesselOptions || baseConfig.vesselOptions);
   const vesselSpecFieldOptions = sanitizeFieldOptions(source.vesselSpecFieldOptions || baseConfig.vesselSpecFieldOptions);
   const vesselSpecs = sanitizeVesselSpecsMap(source.vesselSpecs || baseConfig.vesselSpecs, vesselOptions);
-  const defaultSelectedIds = String(source?.formDefaults?.selectedVesselSpecFields || baseConfig.formDefaults.selectedVesselSpecFields || '')
+  const defaultSelectedIds = String(source?.formDefaults?.selectedVesselSpecFields || LEGACY_DEFAULT_SELECTED_SPEC_FIELDS.join(','))
     .split(',')
     .map((item) => trimmed(item))
     .filter(Boolean);
-  const vesselStructuredSpecs = sanitizeStructuredSpecs(source.vesselStructuredSpecs || {}, vesselOptions, vesselSpecFieldOptions, defaultSelectedIds);
+  const vesselStructuredSpecs = sanitizeStructuredSpecs(source.vesselStructuredSpecs || {}, vesselOptions, vesselSpecFieldOptions, defaultSelectedIds, vesselSpecs);
 
   return {
     vesselOptions,

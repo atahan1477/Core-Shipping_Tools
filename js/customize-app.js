@@ -62,7 +62,7 @@ function createSpecRow(index = 0) {
     enabled: true,
     order: index + 1,
     label: '',
-    value: '',
+    value: '-',
     htmlLine: Math.floor(index / 2) + 1
   };
 }
