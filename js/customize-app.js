@@ -117,6 +117,7 @@ function renderSelectedVesselEditor() {
 }
 
 function renderStructuredSpecsGrid() {
+  alignAllVesselRowsToTemplate();
   ensureVesselRecord(selectedVessel);
   structuredSpecsGrid.innerHTML = '';
 
@@ -377,6 +378,7 @@ function refreshPreview() {
 }
 
 function renderAll() {
+  alignAllVesselRowsToTemplate();
   ensureTermBehaviorRecords();
   if (!working.vesselOptions.includes(selectedVessel)) {
     selectedVessel = working.vesselOptions[0] || '';
@@ -509,6 +511,7 @@ document.getElementById('addVesselBtn').addEventListener('click', () => {
   }
   working.vesselOptions.push(clean);
   ensureVesselRecord(clean);
+  alignAllVesselRowsToTemplate();
   selectedVessel = clean;
   renderAll();
   showStatus('New vessel added.');
