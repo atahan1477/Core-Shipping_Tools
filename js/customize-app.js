@@ -3,7 +3,6 @@ import {
   getRuntimeConfig,
   saveRuntimeCustomization,
   clearRuntimeCustomization,
-  slugifyFieldId,
   syncRuntimeCustomizationFromServer,
   pushRuntimeCustomizationToServer,
   resetRuntimeCustomizationOnServer
@@ -25,7 +24,7 @@ const vesselSelect = document.getElementById('customizerVesselSelect');
 const vesselNameInput = document.getElementById('customizerVesselName');
 const rawSpecsInput = document.getElementById('customizerRawSpecs');
 const structuredSpecsGrid = document.getElementById('structuredSpecsGrid');
-const specFieldList = document.getElementById('specFieldList');
+const addSpecRowBtn = document.getElementById('addSpecRowBtn');
 const optionEditors = document.getElementById('optionEditors');
 const termBehaviorList = document.getElementById('termBehaviorList');
 const defaultsJson = document.getElementById('defaultsJson');
@@ -57,14 +56,90 @@ function createWorkingCopy(source) {
   return next;
 }
 
+function createSpecRow(index = 0) {
+  return {
+    id: `spec_${Date.now()}_${index}`,
+    enabled: true,
+    order: index + 1,
+    label: '',
+    value: '-',
+    htmlLine: Math.floor(index / 2) + 1
+  };
+}
+
+function getTemplateVessel() {
+  return working.vesselOptions[0] || selectedVessel || '';
+}
+
+function normalizeRows(rows = []) {
+  return rows
+    .slice()
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+    .map((row, index) => ({
+      ...row,
+      id: row.id || `spec_${Date.now()}_${index}`,
+      enabled: row?.enabled !== false,
+      order: index + 1,
+      htmlLine: Number(row?.htmlLine) || Math.floor(index / 2) + 1
+    }));
+}
+
+function cloneRowMeta(row, index) {
+  return {
+    id: row.id || `spec_${Date.now()}_${index}`,
+    enabled: row.enabled !== false,
+    order: Number(row.order) || (index + 1),
+    label: String(row.label || ''),
+    htmlLine: Number(row.htmlLine) || Math.floor(index / 2) + 1
+  };
+}
+
 function ensureVesselRecord(vessel) {
   if (!working.vesselSpecs[vessel]) working.vesselSpecs[vessel] = '';
-  if (!working.vesselStructuredSpecs[vessel]) working.vesselStructuredSpecs[vessel] = {};
-
-  working.vesselSpecFieldOptions.forEach((field) => {
-    if (!(field.id in working.vesselStructuredSpecs[vessel])) {
-      working.vesselStructuredSpecs[vessel][field.id] = '';
+  if (!Array.isArray(working.vesselStructuredSpecs[vessel])) {
+    const legacy = working.vesselStructuredSpecs[vessel];
+    if (legacy && typeof legacy === 'object') {
+      working.vesselStructuredSpecs[vessel] = Object.entries(legacy).map(([key, value], index) => ({
+        id: key,
+        enabled: true,
+        order: index + 1,
+        label: key,
+        value: String(value ?? '').trim(),
+        htmlLine: Math.floor(index / 2) + 1
+      }));
+    } else {
+      working.vesselStructuredSpecs[vessel] = [];
     }
+  }
+  working.vesselStructuredSpecs[vessel] = normalizeRows(working.vesselStructuredSpecs[vessel]);
+}
+
+function alignAllVesselRowsToTemplate() {
+  const templateVessel = getTemplateVessel();
+  if (!templateVessel) return;
+  ensureVesselRecord(templateVessel);
+
+  const templateRows = normalizeRows(working.vesselStructuredSpecs[templateVessel]);
+  working.vesselStructuredSpecs[templateVessel] = templateRows;
+
+  working.vesselOptions.forEach((vessel) => {
+    ensureVesselRecord(vessel);
+    const existingById = new Map((working.vesselStructuredSpecs[vessel] || []).map((row) => [row.id, row]));
+    working.vesselStructuredSpecs[vessel] = templateRows.map((templateRow, index) => {
+      const existing = existingById.get(templateRow.id);
+      return {
+        ...cloneRowMeta(templateRow, index),
+        value: String(existing?.value ?? '-').trim() || '-'
+      };
+    });
+  });
+}
+
+function updateRowMetaForAllVessels(rowId, updater) {
+  working.vesselOptions.forEach((vessel) => {
+    ensureVesselRecord(vessel);
+    const row = working.vesselStructuredSpecs[vessel].find((item) => item.id === rowId);
+    if (row) updater(row);
   });
 }
 
@@ -99,73 +174,137 @@ function renderSelectedVesselEditor() {
 }
 
 function renderStructuredSpecsGrid() {
+  alignAllVesselRowsToTemplate();
   ensureVesselRecord(selectedVessel);
   structuredSpecsGrid.innerHTML = '';
 
-  working.vesselSpecFieldOptions.forEach((field) => {
-    const row = document.createElement('label');
+  const rows = normalizeRows(working.vesselStructuredSpecs[selectedVessel]);
+
+  working.vesselStructuredSpecs[selectedVessel] = rows;
+
+  rows.forEach((specRow, index) => {
+    const row = document.createElement('div');
     row.className = 'structured-row';
 
-    const title = document.createElement('strong');
-    title.textContent = field.label;
-
-    const input = document.createElement('textarea');
-    input.className = 'small';
-    input.value = working.vesselStructuredSpecs[selectedVessel]?.[field.id] || '';
-    input.placeholder = `${field.label} value for ${selectedVessel}`;
-    input.addEventListener('input', () => {
-      working.vesselStructuredSpecs[selectedVessel][field.id] = input.value;
+    const enabledInput = document.createElement('input');
+    enabledInput.type = 'checkbox';
+    enabledInput.checked = specRow.enabled !== false;
+    enabledInput.title = 'Enabled in output';
+    enabledInput.addEventListener('change', () => {
+      updateRowMetaForAllVessels(specRow.id, (rowItem) => {
+        rowItem.enabled = enabledInput.checked;
+      });
       refreshPreview();
     });
 
-    row.appendChild(title);
-    row.appendChild(input);
-    structuredSpecsGrid.appendChild(row);
-  });
-}
-
-function renderSpecFieldList() {
-  specFieldList.innerHTML = '';
-
-  working.vesselSpecFieldOptions.forEach((field) => {
-    const row = document.createElement('div');
-    row.className = 'repeat-row';
-
-    const labelInput = document.createElement('input');
-    labelInput.value = field.label;
-    labelInput.placeholder = 'Field label';
-    labelInput.addEventListener('input', () => {
-      field.label = labelInput.value;
+    const orderInput = document.createElement('input');
+    orderInput.type = 'number';
+    orderInput.className = 'mini-input';
+    orderInput.min = '1';
+    orderInput.value = String(specRow.order || (index + 1));
+    orderInput.title = 'Order';
+    orderInput.addEventListener('change', () => {
+      const nextOrder = Math.max(1, Number.parseInt(orderInput.value, 10) || (index + 1));
+      updateRowMetaForAllVessels(specRow.id, (rowItem) => {
+        rowItem.order = nextOrder;
+      });
       renderStructuredSpecsGrid();
       refreshPreview();
     });
 
-    const idBadge = document.createElement('span');
-    idBadge.className = 'pill';
-    idBadge.textContent = field.id;
-
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'danger';
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', () => {
-      working.vesselSpecFieldOptions = working.vesselSpecFieldOptions.filter((item) => item.id !== field.id);
-      Object.values(working.vesselStructuredSpecs).forEach((record) => {
-        delete record[field.id];
+    const labelInput = document.createElement('input');
+    labelInput.value = specRow.label || '';
+    labelInput.placeholder = 'Spec label (e.g. DWCC)';
+    labelInput.addEventListener('input', () => {
+      updateRowMetaForAllVessels(specRow.id, (rowItem) => {
+        rowItem.label = labelInput.value;
       });
-      working.formDefaults.selectedVesselSpecFields = String(working.formDefaults.selectedVesselSpecFields || '')
-        .split(',')
-        .map((value) => value.trim())
-        .filter((value) => value && value !== field.id)
-        .join(',');
-      renderAll();
       refreshPreview();
     });
 
+    const valueInput = document.createElement('input');
+    valueInput.value = specRow.value || '';
+    valueInput.placeholder = `Spec value for ${selectedVessel}`;
+    valueInput.addEventListener('input', () => {
+      specRow.value = valueInput.value;
+      refreshPreview();
+    });
+
+    const htmlLineInput = document.createElement('input');
+    htmlLineInput.type = 'number';
+    htmlLineInput.className = 'mini-input';
+    htmlLineInput.min = '1';
+    htmlLineInput.value = String(specRow.htmlLine || (Math.floor(index / 2) + 1));
+    htmlLineInput.title = 'HTML line group';
+    htmlLineInput.addEventListener('change', () => {
+      const nextHtmlLine = Math.max(1, Number.parseInt(htmlLineInput.value, 10) || 1);
+      updateRowMetaForAllVessels(specRow.id, (rowItem) => {
+        rowItem.htmlLine = nextHtmlLine;
+      });
+      refreshPreview();
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'inline-actions';
+
+    const upBtn = document.createElement('button');
+    upBtn.type = 'button';
+    upBtn.className = 'secondary icon-btn';
+    upBtn.textContent = '↑';
+    upBtn.disabled = index === 0;
+    upBtn.addEventListener('click', () => {
+      if (index === 0) return;
+      const currentList = working.vesselStructuredSpecs[selectedVessel];
+      const prevRowId = currentList[index - 1]?.id;
+      const currentRowId = currentList[index]?.id;
+      if (!prevRowId || !currentRowId) return;
+      updateRowMetaForAllVessels(prevRowId, (rowItem) => { rowItem.order = index + 1; });
+      updateRowMetaForAllVessels(currentRowId, (rowItem) => { rowItem.order = index; });
+      renderStructuredSpecsGrid();
+      refreshPreview();
+    });
+
+    const downBtn = document.createElement('button');
+    downBtn.type = 'button';
+    downBtn.className = 'secondary icon-btn';
+    downBtn.textContent = '↓';
+    downBtn.disabled = index === rows.length - 1;
+    downBtn.addEventListener('click', () => {
+      if (index >= rows.length - 1) return;
+      const currentList = working.vesselStructuredSpecs[selectedVessel];
+      const nextRowId = currentList[index + 1]?.id;
+      const currentRowId = currentList[index]?.id;
+      if (!nextRowId || !currentRowId) return;
+      updateRowMetaForAllVessels(nextRowId, (rowItem) => { rowItem.order = index + 1; });
+      updateRowMetaForAllVessels(currentRowId, (rowItem) => { rowItem.order = index + 2; });
+      renderStructuredSpecsGrid();
+      refreshPreview();
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'danger icon-btn';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => {
+      working.vesselOptions.forEach((vessel) => {
+        ensureVesselRecord(vessel);
+        working.vesselStructuredSpecs[vessel] = working.vesselStructuredSpecs[vessel].filter((rowItem) => rowItem.id !== specRow.id);
+      });
+      renderStructuredSpecsGrid();
+      refreshPreview();
+    });
+
+    actions.appendChild(upBtn);
+    actions.appendChild(downBtn);
+    actions.appendChild(removeBtn);
+
+    row.appendChild(enabledInput);
+    row.appendChild(orderInput);
     row.appendChild(labelInput);
-    row.appendChild(idBadge);
-    row.appendChild(removeBtn);
-    specFieldList.appendChild(row);
+    row.appendChild(valueInput);
+    row.appendChild(htmlLineInput);
+    row.appendChild(actions);
+    structuredSpecsGrid.appendChild(row);
   });
 }
 
@@ -310,13 +449,13 @@ function refreshPreview() {
 }
 
 function renderAll() {
+  alignAllVesselRowsToTemplate();
   ensureTermBehaviorRecords();
   if (!working.vesselOptions.includes(selectedVessel)) {
     selectedVessel = working.vesselOptions[0] || '';
   }
   renderVesselSelector();
   renderSelectedVesselEditor();
-  renderSpecFieldList();
   renderOptionEditors();
   renderTermBehaviorList();
   defaultsJson.value = JSON.stringify(working.formDefaults, null, 2);
@@ -443,6 +582,7 @@ document.getElementById('addVesselBtn').addEventListener('click', () => {
   }
   working.vesselOptions.push(clean);
   ensureVesselRecord(clean);
+  alignAllVesselRowsToTemplate();
   selectedVessel = clean;
   renderAll();
   showStatus('New vessel added.');
@@ -459,21 +599,22 @@ document.getElementById('removeVesselBtn').addEventListener('click', () => {
   showStatus('Vessel removed.');
 });
 
-document.getElementById('addSpecFieldBtn').addEventListener('click', () => {
-  const label = window.prompt('New checkbox field label');
-  if (!label) return;
-  let id = slugifyFieldId(label);
-  const used = new Set(working.vesselSpecFieldOptions.map((field) => field.id));
-  while (used.has(id)) {
-    id = `${id}_x`;
-  }
-  working.vesselSpecFieldOptions.push({ id, label: label.trim() });
-  Object.keys(working.vesselStructuredSpecs).forEach((vessel) => {
-    if (!working.vesselStructuredSpecs[vessel]) working.vesselStructuredSpecs[vessel] = {};
-    working.vesselStructuredSpecs[vessel][id] = '';
+addSpecRowBtn.addEventListener('click', () => {
+  const templateVessel = getTemplateVessel();
+  ensureVesselRecord(templateVessel);
+  const nextIndex = working.vesselStructuredSpecs[templateVessel].length;
+  const newRow = createSpecRow(nextIndex);
+
+  working.vesselOptions.forEach((vessel) => {
+    ensureVesselRecord(vessel);
+    working.vesselStructuredSpecs[vessel].push({
+      ...cloneRowMeta(newRow, nextIndex),
+      value: '-'
+    });
   });
-  renderAll();
-  showStatus('New checkbox field added.');
+  renderStructuredSpecsGrid();
+  refreshPreview();
+  showStatus('New structured spec row added for all vessels (value remains vessel-specific).');
 });
 
 vesselSelect.addEventListener('change', () => {
