@@ -59,7 +59,6 @@ function createWorkingCopy(source) {
 function createSpecRow(index = 0) {
   return {
     id: `spec_${Date.now()}_${index}`,
-    enabled: true,
     order: index + 1,
     label: '',
     value: '-',
@@ -78,7 +77,6 @@ function normalizeRows(rows = []) {
     .map((row, index) => ({
       ...row,
       id: row.id || `spec_${Date.now()}_${index}`,
-      enabled: row?.enabled !== false,
       order: index + 1,
       htmlLine: Number(row?.htmlLine) || Math.floor(index / 2) + 1
     }));
@@ -87,7 +85,6 @@ function normalizeRows(rows = []) {
 function cloneRowMeta(row, index) {
   return {
     id: row.id || `spec_${Date.now()}_${index}`,
-    enabled: row.enabled !== false,
     order: Number(row.order) || (index + 1),
     label: String(row.label || ''),
     htmlLine: Number(row.htmlLine) || Math.floor(index / 2) + 1
@@ -101,7 +98,6 @@ function ensureVesselRecord(vessel) {
     if (legacy && typeof legacy === 'object') {
       working.vesselStructuredSpecs[vessel] = Object.entries(legacy).map(([key, value], index) => ({
         id: key,
-        enabled: true,
         order: index + 1,
         label: key,
         value: String(value ?? '').trim(),
@@ -185,17 +181,6 @@ function renderStructuredSpecsGrid() {
   rows.forEach((specRow, index) => {
     const row = document.createElement('div');
     row.className = 'structured-row';
-
-    const enabledInput = document.createElement('input');
-    enabledInput.type = 'checkbox';
-    enabledInput.checked = specRow.enabled !== false;
-    enabledInput.title = 'Enabled in output';
-    enabledInput.addEventListener('change', () => {
-      updateRowMetaForAllVessels(specRow.id, (rowItem) => {
-        rowItem.enabled = enabledInput.checked;
-      });
-      refreshPreview();
-    });
 
     const orderInput = document.createElement('input');
     orderInput.type = 'number';
@@ -298,7 +283,6 @@ function renderStructuredSpecsGrid() {
     actions.appendChild(downBtn);
     actions.appendChild(removeBtn);
 
-    row.appendChild(enabledInput);
     row.appendChild(orderInput);
     row.appendChild(labelInput);
     row.appendChild(valueInput);
