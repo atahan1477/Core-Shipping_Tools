@@ -314,6 +314,8 @@ export function buildSignature(data) {
 
 export function buildOfferText(data) {
   const isTextMode = isTextModeTerm(data.terms);
+  const polSuffix = trimmed(data.polSuffix) || trimmed(data.terminalSuffix);
+  const podSuffix = trimmed(data.podSuffix) || trimmed(data.terminalSuffix);
   const loadingFinal = isTextMode
     ? trimmed(data.fltLoadingText) || 'As fast as vessel can load'
     : `${trimmed(data.loadingDays)} days ${trimmed(data.loadingTerms)}`.trim();
@@ -329,8 +331,8 @@ export function buildOfferText(data) {
     `${trimmed(data.cargoStackable)}`,
     `${trimmed(data.pcBasis || 'P/c basis')}`,
     `Lay/can: ${trimmed(data.laycanDate)}`,
-    `POL: ${normalizePort(data.pol, data.terminalSuffix)}`,
-    `POD: ${normalizePort(data.pod, data.terminalSuffix)}`,
+    `POL: ${normalizePort(data.pol, polSuffix)}`,
+    `POD: ${normalizePort(data.pod, podSuffix)}`,
     `Freight: ${freightFinal(data.currency, data.freightAmount, data.freightTerms)}`,
     `Terms: ${trimmed(data.terms)}`,
     `Dem/Det: ${demdetFinal(data.currency, data.demdetAmount)}`,
@@ -409,6 +411,8 @@ export function buildEmailText(data) {
 
 export function buildComputedOffer(data) {
   const isTextMode = isTextModeTerm(data.terms);
+  const polSuffix = trimmed(data.polSuffix) || trimmed(data.terminalSuffix);
+  const podSuffix = trimmed(data.podSuffix) || trimmed(data.terminalSuffix);
   const loadingFinal = isTextMode
     ? trimmed(data.fltLoadingText) || 'As fast as vessel can load'
     : `${trimmed(data.loadingDays)} days ${trimmed(data.loadingTerms)}`.trim();
@@ -425,8 +429,8 @@ export function buildComputedOffer(data) {
     stackability: trimmed(data.cargoStackable),
     basis: trimmed(data.pcBasis || 'P/c basis'),
     laycan: trimmed(data.laycanDate),
-    pol: normalizePort(data.pol, data.terminalSuffix),
-    pod: normalizePort(data.pod, data.terminalSuffix),
+    pol: normalizePort(data.pol, polSuffix),
+    pod: normalizePort(data.pod, podSuffix),
     freight: freightFinal(data.currency, data.freightAmount, data.freightTerms),
     terms: trimmed(data.terms),
     demdet: demdetFinal(data.currency, data.demdetAmount),
