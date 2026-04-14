@@ -51,6 +51,14 @@
       background: linear-gradient(180deg, rgba(22,53,93,0.06), rgba(255,255,255,0.25));
     }
 
+    .hero-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
     .brand {
       width: min(280px, 100%);
       padding: 10px 12px;
@@ -196,6 +204,104 @@
       font-size: 0.92rem;
     }
 
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #ffffff, #f6f9fc);
+      border: 1px solid var(--border);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.82);
+      user-select: none;
+    }
+
+    .theme-toggle-label {
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .theme-switch {
+      position: relative;
+      width: 48px;
+      height: 28px;
+      display: inline-block;
+    }
+
+    .theme-switch input {
+      position: absolute;
+      opacity: 0;
+      inset: 0;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .theme-slider {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #d8e2ee, #c7d4e4);
+      transition: background 0.2s ease;
+      box-shadow: inset 0 1px 2px rgba(16, 40, 70, 0.12);
+    }
+
+    .theme-slider::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 2px 8px rgba(16, 40, 70, 0.18);
+      transition: transform 0.2s ease;
+    }
+
+    .theme-switch input:checked + .theme-slider {
+      background: linear-gradient(180deg, #3f5d85, #244873);
+    }
+
+    .theme-switch input:checked + .theme-slider::after {
+      transform: translateX(20px);
+    }
+
+    html[data-theme="dark"] {
+      --bg-1: #0d1726;
+      --bg-2: #09121d;
+      --panel: rgba(15, 26, 40, 0.94);
+      --border: #2c3f56;
+      --text: #e5edf8;
+      --muted: #a7bdd7;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+    }
+
+    html[data-theme="dark"] .tool-card,
+    html[data-theme="dark"] .brand,
+    html[data-theme="dark"] .tool-button.ghost,
+    html[data-theme="dark"] .theme-toggle {
+      background: linear-gradient(180deg, #1a2a3f, #152337);
+      border-color: #31445d;
+      color: #e5edf8;
+      box-shadow: none;
+    }
+
+    html[data-theme="dark"] .eyebrow {
+      color: #d4e4fa;
+      background: rgba(120, 155, 194, 0.16);
+      border-color: rgba(120, 155, 194, 0.26);
+    }
+
+    html[data-theme="dark"] .theme-toggle-label,
+    html[data-theme="dark"] .meta,
+    html[data-theme="dark"] .tool-card p,
+    html[data-theme="dark"] .hero p,
+    html[data-theme="dark"] .footer-note {
+      color: #a7bdd7;
+    }
+
     @media (max-width: 880px) {
       .tools {
         grid-template-columns: 1fr;
@@ -210,8 +316,17 @@
 <body>
   <main class="shell">
     <section class="hero">
-      <div class="brand">
+      <div class="hero-top">
+        <div class="brand">
         <img src="https://raw.githubusercontent.com/atahan1477/CORE-SHIPPING_firm_offer_generator/main/assets/core-shipping-logo.png" alt="Core Shipping" onerror="this.closest('.brand').style.display='none'" />
+        </div>
+        <div class="theme-toggle">
+          <span class="theme-toggle-label">Light / Dark</span>
+          <label class="theme-switch" for="themeToggle" aria-label="Toggle light and dark mode globally">
+            <input type="checkbox" id="themeToggle" />
+            <span class="theme-slider"></span>
+          </label>
+        </div>
       </div>
       <h1>Core Shipping Tools</h1>
       <p>Select a tool to continue. The first button opens your main Firm Offer Generator. The second button is labeled as requested and opens your Brevo JSON Feed Maker so non-technical users can prepare the feed file without editing raw JSON manually.</p>
@@ -250,5 +365,54 @@
       Both pages use the same domain structure, so this setup stays fully compatible with your current GitHub to Vercel deployment workflow.
     </div>
   </main>
+
+  <script>
+    (function () {
+      const THEME_STORAGE_KEY = 'coreShippingTheme';
+      const LEGACY_THEME_STORAGE_KEY = 'firmOfferGeneratorTheme';
+
+      const readStoredTheme = () => {
+        try {
+          const current = localStorage.getItem(THEME_STORAGE_KEY);
+          if (current === 'dark' || current === 'light') return current;
+
+          const legacy = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+          if (legacy === 'dark' || legacy === 'light') {
+            localStorage.setItem(THEME_STORAGE_KEY, legacy);
+            return legacy;
+          }
+        } catch (_) {}
+        return 'light';
+      };
+
+      const applyTheme = (theme) => {
+        const normalized = theme === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', normalized);
+        document.body.setAttribute('data-theme', normalized);
+        const toggle = document.getElementById('themeToggle');
+        if (toggle) toggle.checked = normalized === 'dark';
+      };
+
+      applyTheme(readStoredTheme());
+
+      const toggle = document.getElementById('themeToggle');
+      if (toggle) {
+        toggle.addEventListener('change', () => {
+          const nextTheme = toggle.checked ? 'dark' : 'light';
+          applyTheme(nextTheme);
+          try {
+            localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+            localStorage.setItem(LEGACY_THEME_STORAGE_KEY, nextTheme);
+          } catch (_) {}
+        });
+      }
+
+      window.addEventListener('storage', (event) => {
+        if (event.key === THEME_STORAGE_KEY && (event.newValue === 'dark' || event.newValue === 'light')) {
+          applyTheme(event.newValue);
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

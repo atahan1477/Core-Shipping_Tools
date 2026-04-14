@@ -14,7 +14,8 @@ import {
 } from '../shared/store.js';
 
 const APP_SOURCE = `firm-offer-app:${Math.random().toString(36).slice(2)}`;
-const THEME_STORAGE_KEY = 'firmOfferGeneratorTheme';
+const THEME_STORAGE_KEY = 'coreShippingTheme';
+const LEGACY_THEME_STORAGE_KEY = 'firmOfferGeneratorTheme';
 
 let runtimeConfig = getRuntimeConfig();
 
@@ -37,7 +38,6 @@ const includeVesselSpecsInput = document.getElementById('includeVesselSpecs');
 const vesselSpecsField = document.getElementById('vesselSpecs');
 const vesselSpecsHtmlField = document.getElementById('vesselSpecsHtml');
 const vesselSpecsPreview = document.getElementById('vesselSpecsPreview');
-const themeToggle = document.getElementById('themeToggle');
 const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
 
 const fieldElements = Array.from(form.querySelectorAll('input[name], select[name], textarea[name]'));
@@ -313,7 +313,6 @@ function applyTheme(theme) {
   const normalizedTheme = theme === 'dark' ? 'dark' : 'light';
   document.body.setAttribute('data-theme', normalizedTheme);
   document.documentElement.setAttribute('data-theme', normalizedTheme);
-  themeToggle.checked = normalizedTheme === 'dark';
 }
 
 function initializeTheme() {
@@ -329,8 +328,17 @@ function initializeTheme() {
     return;
   }
 
-  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  applyTheme(prefersDark ? 'dark' : 'light');
+  try {
+    const legacyTheme = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    if (legacyTheme === 'dark' || legacyTheme === 'light') {
+      localStorage.setItem(THEME_STORAGE_KEY, legacyTheme);
+      applyTheme(legacyTheme);
+      refreshThemeSensitiveUI();
+      return;
+    }
+  } catch (_) {}
+
+  applyTheme('light');
   refreshThemeSensitiveUI();
 }
 
@@ -438,14 +446,11 @@ subscribeToRuntimeCustomization((_, meta = {}) => {
 form.addEventListener('input', handleAnyInput);
 form.addEventListener('change', handleAnyInput);
 
-themeToggle.addEventListener('change', () => {
-  const nextTheme = themeToggle.checked ? 'dark' : 'light';
-  applyTheme(nextTheme);
-  refreshThemeSensitiveUI();
-
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-  } catch (_) {}
+window.addEventListener('storage', (event) => {
+  if (event.key === THEME_STORAGE_KEY && (event.newValue === 'dark' || event.newValue === 'light')) {
+    applyTheme(event.newValue);
+    refreshThemeSensitiveUI();
+  }
 });
 
 document.getElementById('tabRaw').addEventListener('click', () => switchView('raw'));
