@@ -253,17 +253,19 @@ async function handlePost(request, response) {
 
   try {
     const updatedAt = new Date().toISOString();
-    await put(BLOB_PATHNAME, JSON.stringify({ customization, updatedAt }, null, 2), {
+    const savedBlob = await put(BLOB_PATHNAME, JSON.stringify({ customization, updatedAt }, null, 2), {
       access: 'public',
       addRandomSuffix: false,
       allowOverwrite: true,
       cacheControlMaxAge: 0
     });
+    const savedBlobUrl = savedBlob?.url || '';
+    lastKnownBlobUrl = savedBlobUrl;
 
     const meta = {
       pathname: BLOB_PATHNAME,
       exists: true,
-      blobUrl: lastKnownBlobUrl || null,
+      blobUrl: savedBlobUrl || null,
       updatedAt
     };
     saveReadCache({
