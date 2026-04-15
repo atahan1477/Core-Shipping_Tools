@@ -110,6 +110,44 @@
       gap: 18px;
     }
 
+    .tool-card.under-development {
+      overflow: hidden;
+    }
+
+    .tool-card.under-development::after {
+      content: "UNDER CONSTRUCTION";
+      position: absolute;
+      top: 56%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-27deg);
+      width: 165%;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.05rem;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      color: #ffffff;
+      text-shadow:
+        -1px -1px 0 #000,
+        1px -1px 0 #000,
+        -1px 1px 0 #000,
+        1px 1px 0 #000,
+        0 2px 4px rgba(0, 0, 0, 0.45);
+      background:
+        repeating-linear-gradient(
+          -45deg,
+          #1f1f1f 0 16px,
+          #f4de2f 16px 32px
+        );
+      border-top: 4px solid #f4de2f;
+      border-bottom: 4px solid #f4de2f;
+      box-shadow: 0 10px 20px rgba(10, 20, 35, 0.24);
+      pointer-events: none;
+      z-index: 2;
+    }
+
     .eyebrow {
       display: inline-flex;
       align-items: center;
@@ -294,6 +332,11 @@
       border-color: rgba(120, 155, 194, 0.26);
     }
 
+    html[data-theme="dark"] .tool-card.under-development::after {
+      color: #ffffff;
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
+    }
+
     html[data-theme="dark"] .theme-toggle-label,
     html[data-theme="dark"] .meta,
     html[data-theme="dark"] .tool-card p,
@@ -348,7 +391,7 @@
         </div>
       </article>
 
-      <article class="tool-card">
+      <article class="tool-card under-development">
         <div>
           <span class="eyebrow">Secondary Tool</span>
           <h2>Brevo JSON Feed Maker</h2>
