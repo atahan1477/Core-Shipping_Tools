@@ -128,8 +128,13 @@
       font-size: 1.05rem;
       font-weight: 900;
       letter-spacing: 0.03em;
-      color: #d31111;
-      text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+      color: #ffffff;
+      text-shadow:
+        -1px -1px 0 #000,
+        1px -1px 0 #000,
+        -1px 1px 0 #000,
+        1px 1px 0 #000,
+        0 2px 4px rgba(0, 0, 0, 0.45);
       background:
         repeating-linear-gradient(
           -45deg,
@@ -328,7 +333,7 @@
     }
 
     html[data-theme="dark"] .tool-card.under-development::after {
-      color: #d31111;
+      color: #ffffff;
       box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
     }
 
