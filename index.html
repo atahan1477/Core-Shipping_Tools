@@ -110,6 +110,28 @@
       gap: 18px;
     }
 
+    .tool-card.under-development {
+      overflow: hidden;
+    }
+
+    .tool-card.under-development::after {
+      content: "Under development";
+      position: absolute;
+      top: 58%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      color: #4e9a2d;
+      background: rgba(233, 248, 224, 0.92);
+      border: 1px solid rgba(78, 154, 45, 0.25);
+      pointer-events: none;
+      z-index: 2;
+    }
+
     .eyebrow {
       display: inline-flex;
       align-items: center;
@@ -294,6 +316,12 @@
       border-color: rgba(120, 155, 194, 0.26);
     }
 
+    html[data-theme="dark"] .tool-card.under-development::after {
+      color: #8dd36f;
+      background: rgba(27, 55, 19, 0.88);
+      border-color: rgba(141, 211, 111, 0.35);
+    }
+
     html[data-theme="dark"] .theme-toggle-label,
     html[data-theme="dark"] .meta,
     html[data-theme="dark"] .tool-card p,
@@ -348,7 +376,7 @@
         </div>
       </article>
 
-      <article class="tool-card">
+      <article class="tool-card under-development">
         <div>
           <span class="eyebrow">Secondary Tool</span>
           <h2>Brevo JSON Feed Maker</h2>
