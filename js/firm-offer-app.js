@@ -35,6 +35,12 @@ const loadingTextLabel = document.getElementById('loadingTextLabel');
 const dischargingTextLabel = document.getElementById('dischargingTextLabel');
 const termMeaningNote = document.getElementById('termMeaningNote');
 const termStructureNote = document.getElementById('termStructureNote');
+const loadingDaysField = document.getElementById('loadingDaysField');
+const loadingTermsField = document.getElementById('loadingTermsField');
+const dischargingDaysField = document.getElementById('dischargingDaysField');
+const dischargingTermsField = document.getElementById('dischargingTermsField');
+const fltLoadingField = document.getElementById('fltLoadingField');
+const fltDischargingField = document.getElementById('fltDischargingField');
 const vesselSelect = document.getElementById('vessel');
 const includeVesselSpecsInput = document.getElementById('includeVesselSpecs');
 const vesselSpecsField = document.getElementById('vesselSpecs');
@@ -179,10 +185,18 @@ function updateConditionalUI() {
   const selectedTerm = document.getElementById('terms').value;
   const behavior = getTermBehavior(selectedTerm);
   const isTextMode = behavior.mode === 'text';
+  const includeLoading = behavior.includeLoading !== false;
+  const includeDischarging = behavior.includeDischarging !== false;
 
   laytimeFields.classList.toggle('hidden', isTextMode);
   fltFields.classList.toggle('hidden', !isTextMode);
   congestionRow.classList.toggle('hidden', !isTextMode);
+  if (loadingDaysField) loadingDaysField.classList.toggle('hidden', !includeLoading);
+  if (loadingTermsField) loadingTermsField.classList.toggle('hidden', !includeLoading);
+  if (dischargingDaysField) dischargingDaysField.classList.toggle('hidden', !includeDischarging);
+  if (dischargingTermsField) dischargingTermsField.classList.toggle('hidden', !includeDischarging);
+  if (fltLoadingField) fltLoadingField.classList.toggle('hidden', !includeLoading);
+  if (fltDischargingField) fltDischargingField.classList.toggle('hidden', !includeDischarging);
 
   if (congestionToggleLabel) {
     congestionToggleLabel.textContent = `Include congestion clause when ${selectedTerm} is selected`;

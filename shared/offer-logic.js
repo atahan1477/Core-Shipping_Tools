@@ -275,6 +275,8 @@ export function getTermBehavior(term) {
   const termBehavior = getRuntimeTermBehavior();
   return termBehavior[trimmed(term)] || {
     mode: 'laytime',
+    includeLoading: true,
+    includeDischarging: true,
     meaning: `${trimmed(term)} selected.`,
     structure: 'Selected structure: day-based loading / discharging laytime fields.'
   };
@@ -313,7 +315,10 @@ export function buildSignature(data) {
 }
 
 export function buildOfferText(data) {
-  const isTextMode = isTextModeTerm(data.terms);
+  const behavior = getTermBehavior(data.terms);
+  const isTextMode = behavior.mode === 'text';
+  const includeLoading = behavior.includeLoading !== false;
+  const includeDischarging = behavior.includeDischarging !== false;
   const polSuffix = trimmed(data.polSuffix) || trimmed(data.terminalSuffix);
   const podSuffix = trimmed(data.podSuffix) || trimmed(data.terminalSuffix);
   const loadingFinal = isTextMode
@@ -335,10 +340,16 @@ export function buildOfferText(data) {
     `POD: ${normalizePort(data.pod, podSuffix)}`,
     `Freight: ${freightFinal(data.currency, data.freightAmount, data.freightTerms)}`,
     `Terms: ${trimmed(data.terms)}`,
-    `Dem/Det: ${demdetFinal(data.currency, data.demdetAmount)}`,
-    `Loading: ${loadingFinal}`,
-    `Discharging: ${dischargingFinal}`
+    `Dem/Det: ${demdetFinal(data.currency, data.demdetAmount)}`
   ];
+
+  if (includeLoading) {
+    lines.push(`Loading: ${loadingFinal}`);
+  }
+
+  if (includeDischarging) {
+    lines.push(`Discharging: ${dischargingFinal}`);
+  }
 
   if (isTextMode && data.includeCongestion && trimmed(data.congestionClause)) {
     lines.push(trimmed(data.congestionClause));
@@ -410,7 +421,10 @@ export function buildEmailText(data) {
 }
 
 export function buildComputedOffer(data) {
-  const isTextMode = isTextModeTerm(data.terms);
+  const behavior = getTermBehavior(data.terms);
+  const isTextMode = behavior.mode === 'text';
+  const includeLoading = behavior.includeLoading !== false;
+  const includeDischarging = behavior.includeDischarging !== false;
   const polSuffix = trimmed(data.polSuffix) || trimmed(data.terminalSuffix);
   const podSuffix = trimmed(data.podSuffix) || trimmed(data.terminalSuffix);
   const loadingFinal = isTextMode
@@ -434,8 +448,10 @@ export function buildComputedOffer(data) {
     freight: freightFinal(data.currency, data.freightAmount, data.freightTerms),
     terms: trimmed(data.terms),
     demdet: demdetFinal(data.currency, data.demdetAmount),
-    loading: loadingFinal,
-    discharging: dischargingFinal,
+    includeLoading,
+    includeDischarging,
+    loading: includeLoading ? loadingFinal : '',
+    discharging: includeDischarging ? dischargingFinal : '',
     congestion: isTextMode && data.includeCongestion ? trimmed(data.congestionClause) : '',
     agentLoad: trimmed(data.agentLoad),
     agentDischarge: trimmed(data.agentDischarge),
@@ -498,10 +514,15 @@ export function buildTermsRowsHtml(details) {
     ['POD', details.pod],
     ['Freight', details.freight],
     ['Terms', details.terms],
-    ['Dem/Det', details.demdet],
-    ['Loading', details.loading],
-    ['Discharging', details.discharging]
+    ['Dem/Det', details.demdet]
   ];
+
+  if (details.includeLoading !== false) {
+    rows.push(['Loading', details.loading]);
+  }
+  if (details.includeDischarging !== false) {
+    rows.push(['Discharging', details.discharging]);
+  }
 
   if (details.congestion) {
     rows.push(['Congestion', details.congestion]);

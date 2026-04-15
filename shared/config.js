@@ -106,21 +106,29 @@ export const baseConfig = {
 export const BASE_TERM_BEHAVIOR = {
   'Free In Free Out': {
     mode: 'laytime',
+    includeLoading: true,
+    includeDischarging: true,
     meaning: 'Free In Free Out = Loading and discharging on free in / free out basis.',
     structure: 'Selected structure: day-based loading / discharging laytime fields for both ends.'
   },
   'Free In Liner Out': {
     mode: 'laytime',
+    includeLoading: true,
+    includeDischarging: true,
     meaning: 'Free In Liner Out = Loading on free in basis and discharging on liner out basis.',
     structure: 'Selected structure: day-based loading / discharging laytime fields matched to the selected term.'
   },
   'Liner In Free Out': {
     mode: 'laytime',
+    includeLoading: true,
+    includeDischarging: true,
     meaning: 'Liner In Free Out = Loading on liner in basis and discharging on free out basis.',
     structure: 'Selected structure: day-based loading / discharging laytime fields matched to the selected term.'
   },
   'Liner In Liner Out': {
     mode: 'laytime',
+    includeLoading: true,
+    includeDischarging: true,
     meaning: 'Liner In Liner Out = Loading and discharging on liner in / liner out basis.',
     structure: 'Selected structure: day-based loading / discharging laytime fields for both ends.'
   }
@@ -432,12 +440,16 @@ function sanitizeTermBehavior(value, termsOptions) {
   termsOptions.forEach((term) => {
     const base = BASE_TERM_BEHAVIOR[term] || {
       mode: 'laytime',
+      includeLoading: true,
+      includeDischarging: true,
       meaning: `${term} selected.`,
       structure: 'Selected structure: day-based loading / discharging laytime fields.'
     };
     const override = safeValue[term] && typeof safeValue[term] === 'object' ? safeValue[term] : {};
     result[term] = {
       mode: override.mode === 'text' ? 'text' : base.mode,
+      includeLoading: override.includeLoading !== undefined ? Boolean(override.includeLoading) : base.includeLoading !== false,
+      includeDischarging: override.includeDischarging !== undefined ? Boolean(override.includeDischarging) : base.includeDischarging !== false,
       meaning: trimmed(override.meaning || base.meaning),
       structure: trimmed(override.structure || base.structure)
     };

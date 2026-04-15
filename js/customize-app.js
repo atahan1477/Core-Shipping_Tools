@@ -89,6 +89,8 @@ function ensureTermBehaviorRecords() {
     if (!working.termBehavior[term]) {
       working.termBehavior[term] = {
         mode: 'laytime',
+        includeLoading: true,
+        includeDischarging: true,
         meaning: `${term} selected.`,
         structure: 'Selected structure: day-based loading / discharging laytime fields.'
       };
@@ -328,7 +330,13 @@ function renderTermBehaviorList() {
   termBehaviorList.innerHTML = '';
 
   working.termsOptions.forEach((term) => {
-    const record = working.termBehavior[term] || { mode: 'laytime', meaning: '', structure: '' };
+    const record = working.termBehavior[term] || {
+      mode: 'laytime',
+      includeLoading: true,
+      includeDischarging: true,
+      meaning: '',
+      structure: ''
+    };
 
     const wrapper = document.createElement('div');
     wrapper.className = 'option-card';
@@ -387,8 +395,51 @@ function renderTermBehaviorList() {
     structureField.appendChild(structureLabel);
     structureField.appendChild(structureInput);
 
+    const togglesField = document.createElement('div');
+    togglesField.className = 'field full';
+    const togglesLabel = document.createElement('label');
+    togglesLabel.textContent = 'Include in firm offer generator';
+    const togglesRow = document.createElement('div');
+    togglesRow.className = 'inline-actions';
+
+    const loadingToggleLabel = document.createElement('label');
+    loadingToggleLabel.style.display = 'inline-flex';
+    loadingToggleLabel.style.alignItems = 'center';
+    loadingToggleLabel.style.gap = '8px';
+    loadingToggleLabel.style.fontWeight = '600';
+    const loadingToggle = document.createElement('input');
+    loadingToggle.type = 'checkbox';
+    loadingToggle.checked = record.includeLoading !== false;
+    loadingToggle.addEventListener('change', () => {
+      working.termBehavior[term].includeLoading = loadingToggle.checked;
+      refreshPreview();
+    });
+    loadingToggleLabel.appendChild(loadingToggle);
+    loadingToggleLabel.appendChild(document.createTextNode('Loading days / loading terms'));
+
+    const dischargingToggleLabel = document.createElement('label');
+    dischargingToggleLabel.style.display = 'inline-flex';
+    dischargingToggleLabel.style.alignItems = 'center';
+    dischargingToggleLabel.style.gap = '8px';
+    dischargingToggleLabel.style.fontWeight = '600';
+    const dischargingToggle = document.createElement('input');
+    dischargingToggle.type = 'checkbox';
+    dischargingToggle.checked = record.includeDischarging !== false;
+    dischargingToggle.addEventListener('change', () => {
+      working.termBehavior[term].includeDischarging = dischargingToggle.checked;
+      refreshPreview();
+    });
+    dischargingToggleLabel.appendChild(dischargingToggle);
+    dischargingToggleLabel.appendChild(document.createTextNode('Discharging days / discharging terms'));
+
+    togglesRow.appendChild(loadingToggleLabel);
+    togglesRow.appendChild(dischargingToggleLabel);
+    togglesField.appendChild(togglesLabel);
+    togglesField.appendChild(togglesRow);
+
     grid.appendChild(modeField);
     grid.appendChild(meaningField);
+    grid.appendChild(togglesField);
     wrapper.appendChild(grid);
     wrapper.appendChild(structureField);
     termBehaviorList.appendChild(wrapper);
