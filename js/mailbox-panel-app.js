@@ -3,9 +3,12 @@ import { buildEmailText, buildVesselSpecsBlocks, trimmed } from '../shared/offer
 import { applyMicroAnswer, runAutopilotDecisionGraph } from '../shared/autopilot-engine.js';
 
 const runtimeConfig = getRuntimeConfig();
+const SPEED_METRIC_KEY = 'coreShippingMailboxSendDurationsV1';
 
 const generateBtn = document.getElementById('generateBtn');
 const finalizeBtn = document.getElementById('finalizeBtn');
+const acceptSendBtn = document.getElementById('acceptSendBtn');
+const sendCorrectionBtn = document.getElementById('sendCorrectionBtn');
 const statusEl = document.getElementById('status');
 const threadSenderInput = document.getElementById('threadSender');
 const threadTextInput = document.getElementById('threadText');
@@ -17,10 +20,16 @@ const policyAuditInput = document.getElementById('policyAudit');
 const microQuestionWrap = document.getElementById('microQuestionWrap');
 const microQuestionLabel = document.getElementById('microQuestionLabel');
 const microQuestionSelect = document.getElementById('microQuestionSelect');
+const approvalGateInput = document.getElementById('approvalGate');
+const speedMetricInput = document.getElementById('speedMetric');
 
 let pendingDecision = null;
 let pendingContext = null;
 let pendingRFQ = null;
+let latestOfferData = null;
+let latestOfferDraft = null;
+let lastSentRecord = null;
+let rfqOpenedAtMs = Date.now();
 
 function parseRFQFromThread(threadText = '') {
   const text = String(threadText || '');
@@ -49,6 +58,43 @@ function parseRFQFromThread(threadText = '') {
     polHint: trimmed(polMatch?.[1] || ''),
     paymentTermHint: trimmed(paymentTermMatch?.[1] || '').toUpperCase()
   };
+}
+
+function getStoredDurations() {
+  try {
+    const raw = localStorage.getItem(SPEED_METRIC_KEY);
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed.filter((v) => Number.isFinite(v) && v > 0) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveDuration(seconds) {
+  const current = getStoredDurations();
+  current.push(seconds);
+  const capped = current.slice(-25);
+  try {
+    localStorage.setItem(SPEED_METRIC_KEY, JSON.stringify(capped));
+  } catch (_) {}
+}
+
+function computeMedian(values) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function refreshSpeedMetric() {
+  const median = computeMedian(getStoredDurations());
+  if (!median) {
+    speedMetricInput.value = 'No send history yet';
+    return;
+  }
+  const targetState = median < 60 ? 'Target met (<60s)' : 'Above target';
+  speedMetricInput.value = `${median.toFixed(1)}s median | ${targetState}`;
 }
 
 async function fetchCommercialContext(senderEmail, rfq) {
@@ -99,6 +145,22 @@ function mergeToOfferData(rfq, contextPayload, decision) {
     finalClause: `${defaults.finalClause}\n${validitySuffix}`,
     emailSubject: '',
     openingParagraph: 'Thank you for your RFQ email. Please find Owners firm indication below based on your requested shipment details:'
+  };
+}
+
+function isHighRiskOffer(decision, contextPayload, offerData) {
+  const isNewCustomer = String(contextPayload?.crm?.relationshipTier || '').toUpperCase() === 'C';
+  const lowMargin = !decision?.checks?.marginCheck?.pass;
+  const selectedPayment = trimmed(decision?.outputs?.selectedPaymentTerm).toUpperCase();
+  const standardPayments = ['CAD', 'LC AT SIGHT', 'TT 30/70', '100% TT IN ADVANCE'];
+  const nonStandardTerms = !standardPayments.includes(selectedPayment) || /non-standard|subject to revision/i.test(offerData?.finalClause || '');
+  return {
+    flagged: isNewCustomer || lowMargin || nonStandardTerms,
+    reasons: [
+      isNewCustomer ? 'new customer tier' : '',
+      lowMargin ? 'low margin' : '',
+      nonStandardTerms ? 'non-standard terms' : ''
+    ].filter(Boolean)
   };
 }
 
@@ -163,6 +225,25 @@ async function insertIntoComposeWindow(subject, body) {
   return 'Host compose API not detected. Draft generated in panel fields for manual review/copy.';
 }
 
+async function postDispatchLog(payload) {
+  const response = await fetch('/api/offer-dispatch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to log dispatch in CRM.');
+  }
+
+  const result = await response.json();
+  if (!result?.ok) {
+    throw new Error(result?.error || 'Dispatch logging failed.');
+  }
+
+  return result;
+}
+
 function setStatus(message, warning = false) {
   statusEl.textContent = message;
   statusEl.classList.toggle('warn', Boolean(warning));
@@ -171,15 +252,24 @@ function setStatus(message, warning = false) {
 async function finalizeOffer(decision) {
   const offerData = mergeToOfferData(pendingRFQ, pendingContext, decision);
   const offerDraft = buildEmailText(offerData);
+  latestOfferData = offerData;
+  latestOfferDraft = offerDraft;
+
   renderDraft(offerData, offerDraft, decision);
   renderDecisionMeta(decision);
 
+  const risk = isHighRiskOffer(decision, pendingContext, offerData);
+  approvalGateInput.value = risk.flagged
+    ? `Approval required (${risk.reasons.join(', ')})`
+    : 'No approval required (standard offer)';
+
   const composeMessage = await insertIntoComposeWindow(offerDraft.subject, offerDraft.body);
-  setStatus(`Done. ${composeMessage}`);
+  setStatus(`Draft ready. ${composeMessage}`);
 }
 
 generateBtn?.addEventListener('click', async () => {
   try {
+    rfqOpenedAtMs = Date.now();
     setStatus('Running autopilot decision graph...');
     pendingRFQ = parseRFQFromThread(threadTextInput.value);
     pendingContext = await fetchCommercialContext(threadSenderInput.value, pendingRFQ);
@@ -221,3 +311,90 @@ finalizeBtn?.addEventListener('click', async () => {
     setStatus(error?.message || 'Finalize failed.', true);
   }
 });
+
+acceptSendBtn?.addEventListener('click', async () => {
+  try {
+    if (!latestOfferDraft || !latestOfferData || !pendingDecision) {
+      setStatus('Generate and finalize a draft first.', true);
+      return;
+    }
+
+    const risk = isHighRiskOffer(pendingDecision, pendingContext, latestOfferData);
+    if (risk.flagged) {
+      approvalGateInput.value = `Approval required (${risk.reasons.join(', ')})`;
+      setStatus('High-risk offer blocked pending approval gate.', true);
+      return;
+    }
+
+    const sendResult = await postDispatchLog({
+      mode: 'send',
+      senderEmail: threadSenderInput.value,
+      rfqSnapshot: {
+        threadText: threadTextInput.value,
+        extracted: pendingRFQ
+      },
+      generatedTermsSnapshot: {
+        subject: latestOfferDraft.subject,
+        body: latestOfferDraft.body,
+        terms: draftTerms.value,
+        confidence: confidenceScoreInput.value,
+        auditTrail: policyAuditInput.value.split('\n')
+      }
+    });
+
+    lastSentRecord = sendResult.record;
+    const durationSeconds = Math.max(1, Math.round((Date.now() - rfqOpenedAtMs) / 1000));
+    saveDuration(durationSeconds);
+    refreshSpeedMetric();
+    setStatus(`Offer sent. CRM log ${sendResult.record.id} | ${durationSeconds}s RFQ-open→send.`);
+  } catch (error) {
+    setStatus(error?.message || 'Send failed.', true);
+  }
+});
+
+sendCorrectionBtn?.addEventListener('click', async () => {
+  try {
+    if (!lastSentRecord?.id || !latestOfferDraft) {
+      setStatus('No prior sent offer found. Use Accept & Send first.', true);
+      return;
+    }
+
+    const correctionSubject = `Correction: ${latestOfferDraft.subject}`;
+    const correctionBody = [
+      `Reference offer ID: ${lastSentRecord.id}`,
+      `Reference message ID: ${lastSentRecord.messageId}`,
+      '',
+      'Please treat this email as a correction to the prior dispatch.',
+      '',
+      latestOfferDraft.body
+    ].join('\n');
+
+    draftSubject.value = correctionSubject;
+    draftBody.value = correctionBody;
+    await insertIntoComposeWindow(correctionSubject, correctionBody);
+
+    const correctionResult = await postDispatchLog({
+      mode: 'correction',
+      priorOfferId: lastSentRecord.id,
+      senderEmail: threadSenderInput.value,
+      rfqSnapshot: {
+        threadText: threadTextInput.value,
+        extracted: pendingRFQ
+      },
+      generatedTermsSnapshot: {
+        subject: correctionSubject,
+        body: correctionBody,
+        terms: draftTerms.value,
+        confidence: confidenceScoreInput.value,
+        auditTrail: policyAuditInput.value.split('\n')
+      }
+    });
+
+    lastSentRecord = correctionResult.record;
+    setStatus(`Correction dispatched with linkage to prior offer ${correctionResult.record.priorOfferId}.`);
+  } catch (error) {
+    setStatus(error?.message || 'Send correction failed.', true);
+  }
+});
+
+refreshSpeedMetric();
