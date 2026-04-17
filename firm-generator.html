@@ -448,6 +448,60 @@
       margin-bottom: 8px;
     }
 
+    .validation-panel {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fbfdff;
+      padding: 10px;
+      margin-bottom: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .validation-item {
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      background: #fff;
+    }
+
+    .validation-item.warning {
+      border-color: #e9bc69;
+      background: #fff8ea;
+    }
+
+    .validation-item.critical {
+      border-color: #e68c8c;
+      background: #fff1f1;
+    }
+
+    .validation-message {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text);
+      flex: 1 1 240px;
+    }
+
+    .validation-fix {
+      padding: 6px 10px;
+      font-size: 0.78rem;
+    }
+
+    .warning-override {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
     button {
       appearance: none;
       border: 0;
@@ -464,6 +518,12 @@
 
     button:hover { transform: translateY(-1px); }
     button:active { transform: translateY(0); }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
 
     .primary {
       color: #fff;
@@ -794,6 +854,22 @@
       background: #101926;
       color: #dbe6f3;
       -webkit-text-fill-color: #dbe6f3;
+    }
+
+    body[data-theme="dark"] .validation-panel,
+    body[data-theme="dark"] .validation-item {
+      background: #101926;
+      border-color: #31445d;
+    }
+
+    body[data-theme="dark"] .validation-item.warning {
+      border-color: #a77a35;
+      background: #2d2415;
+    }
+
+    body[data-theme="dark"] .validation-item.critical {
+      border-color: #8f4d4d;
+      background: #2d1717;
     }
 
     body[data-theme="dark"] .vtab.active,
@@ -1145,6 +1221,13 @@ Indication is based on current tariffs for load/disch costs and d/as</textarea>
           </div>
 
           <div class="status" id="status"></div>
+          <div class="validation-panel hidden" id="validationPanel">
+            <div id="validationList"></div>
+          </div>
+          <label id="warningOverrideRow" class="warning-override hidden">
+            <input type="checkbox" id="warningOverride" />
+            Allow send with warnings
+          </label>
 
           <div class="preview-shell">
             <div class="subject-bar">

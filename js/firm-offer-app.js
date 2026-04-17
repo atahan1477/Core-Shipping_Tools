@@ -48,6 +48,14 @@ const vesselSpecsField = document.getElementById('vesselSpecs');
 const vesselSpecsHtmlField = document.getElementById('vesselSpecsHtml');
 const vesselSpecsPreview = document.getElementById('vesselSpecsPreview');
 const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
+const validationPanel = document.getElementById('validationPanel');
+const validationList = document.getElementById('validationList');
+const warningOverrideInput = document.getElementById('warningOverride');
+const warningOverrideRow = document.getElementById('warningOverrideRow');
+const sendButtons = [
+  document.getElementById('openDraftBtn'),
+  document.getElementById('openDraftHtmlBtn')
+].filter(Boolean);
 
 const fieldElements = Array.from(form.querySelectorAll('input[name], select[name], textarea[name]'));
 const fieldNames = fieldElements.map((element) => element.name);
@@ -55,6 +63,34 @@ const fieldNames = fieldElements.map((element) => element.name);
 let currentView = 'raw';
 let isApplyingExternalState = false;
 let lastSharedStateSignature = '';
+let latestValidation = { issues: [], hasCritical: false, hasWarnings: false };
+let analyticsIssueSignature = '';
+const previousFieldValues = {};
+
+const REQUIRED_FIELDS = ['emailTo', 'cargo', 'laycanDate', 'pol', 'pod', 'freightAmount', 'demdetAmount', 'terms', 'currency'];
+const CRITICAL_RULES = new Set(['missing_required', 'invalid_validity_date']);
+
+const TLD_LOCALE_MAP = {
+  tr: 'tr-TR',
+  de: 'de-DE',
+  fr: 'fr-FR',
+  es: 'es-ES',
+  it: 'it-IT',
+  nl: 'nl-NL',
+  be: 'nl-BE',
+  uk: 'en-GB',
+  gb: 'en-GB',
+  se: 'sv-SE',
+  no: 'nb-NO',
+  dk: 'da-DK',
+  pl: 'pl-PL',
+  ro: 'ro-RO',
+  ae: 'ar-AE',
+  sa: 'ar-SA',
+  qa: 'ar-QA',
+  jp: 'ja-JP',
+  cn: 'zh-CN'
+};
 
 function currentDefaults() {
   return runtimeConfig.formDefaults || {};
@@ -122,6 +158,173 @@ function collectFormData() {
   });
 
   return data;
+}
+
+function parseLocalizedNumber(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const compact = raw.replace(/\s/g, '').replace(/[^0-9,.-]/g, '');
+  const lastComma = compact.lastIndexOf(',');
+  const lastDot = compact.lastIndexOf('.');
+  let normalized = compact;
+
+  if (lastComma > -1 && lastDot > -1) {
+    if (lastComma > lastDot) {
+      normalized = compact.replace(/\./g, '').replace(',', '.');
+    } else {
+      normalized = compact.replace(/,/g, '');
+    }
+  } else if (lastComma > -1) {
+    const decimalDigits = compact.length - lastComma - 1;
+    normalized = decimalDigits === 3 ? compact.replace(/,/g, '') : compact.replace(',', '.');
+  } else if (lastDot > -1) {
+    const decimalDigits = compact.length - lastDot - 1;
+    normalized = decimalDigits === 3 ? compact.replace(/\./g, '') : compact;
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function guessLocaleFromRecipient(emailTo) {
+  const firstAddress = trimmed(emailTo).split(/[;, ]+/).find(Boolean) || '';
+  const domain = firstAddress.includes('@') ? firstAddress.split('@')[1] : '';
+  const tld = domain.split('.').pop()?.toLowerCase() || '';
+  return TLD_LOCALE_MAP[tld] || navigator.language || 'en-US';
+}
+
+function formatNumberForLocale(value, locale, options = {}) {
+  const parsed = parseLocalizedNumber(value);
+  if (parsed === null) return String(value ?? '');
+  return new Intl.NumberFormat(locale, options).format(parsed);
+}
+
+function formatDateForLocale(value, locale) {
+  const raw = trimmed(value);
+  if (!raw) return raw;
+  const directDate = new Date(raw);
+  if (!Number.isNaN(directDate.getTime())) {
+    return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: '2-digit' }).format(directDate);
+  }
+
+  const rangeMatch = raw.match(/^(\d{1,2})-(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/);
+  if (!rangeMatch) return raw;
+  const [, fromDay, toDay, monthText, yearText] = rangeMatch;
+  const parsedMonth = new Date(`${monthText} 1, ${yearText}`);
+  if (Number.isNaN(parsedMonth.getTime())) return raw;
+  const monthFormatter = new Intl.DateTimeFormat(locale, { month: 'short' });
+  const monthPart = monthFormatter.format(parsedMonth);
+  return `${fromDay.padStart(2, '0')}-${toDay.padStart(2, '0')} ${monthPart} ${yearText}`;
+}
+
+function localizedFormData(data) {
+  const locale = guessLocaleFromRecipient(data.emailTo);
+  return {
+    ...data,
+    laycanDate: formatDateForLocale(data.laycanDate, locale),
+    freightAmount: formatNumberForLocale(data.freightAmount, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    demdetAmount: formatNumberForLocale(data.demdetAmount, locale, { maximumFractionDigits: 2 }),
+    commissionPercentage: formatNumberForLocale(data.commissionPercentage, locale, { maximumFractionDigits: 2 })
+  };
+}
+
+function parseAnyDate(value) {
+  const raw = trimmed(value);
+  if (!raw) return null;
+  const rangeMatch = raw.match(/^(\d{1,2})-(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/);
+  if (rangeMatch) {
+    const [, fromDay, , monthText, yearText] = rangeMatch;
+    const parsed = new Date(`${monthText} ${fromDay}, ${yearText}`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  const direct = new Date(raw);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const dmy = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (!dmy) return null;
+  const [, dd, mm, yy] = dmy;
+  const year = yy.length === 2 ? `20${yy}` : yy;
+  const parsed = new Date(Number(year), Number(mm) - 1, Number(dd));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function buildPresendValidation(data) {
+  const issues = [];
+
+  REQUIRED_FIELDS.forEach((name) => {
+    if (!trimmed(data[name])) {
+      issues.push({
+        type: 'missing_required',
+        severity: 'critical',
+        field: name,
+        message: `${name} is required before send.`,
+        action: previousFieldValues[name]
+          ? { label: 'Use previous value', type: 'use_previous', field: name }
+          : { label: 'Fix with default', type: 'use_default', field: name }
+      });
+    }
+  });
+
+  const freightValue = parseLocalizedNumber(data.freightAmount);
+  const demdetValue = parseLocalizedNumber(data.demdetAmount);
+  if ((freightValue !== null && freightValue < 0) || (demdetValue !== null && demdetValue < 0)) {
+    issues.push({
+      type: 'invalid_number',
+      severity: 'critical',
+      message: 'Freight and Dem/Det amounts must be positive numbers.',
+      action: { label: 'Fix with default', type: 'use_default', field: freightValue !== null && freightValue < 0 ? 'freightAmount' : 'demdetAmount' }
+    });
+  }
+
+  if (trimmed(data.currency) && /EUR|EURO/i.test(data.currency) && /usd/i.test(`${data.freightTerms} ${data.extraClauses}`)) {
+    issues.push({
+      type: 'unit_currency_inconsistency',
+      severity: 'warning',
+      message: 'Currency is EUR while terms/clauses reference USD.',
+      action: { label: 'Fix with default', type: 'use_default', field: 'currency' }
+    });
+  }
+
+  const laycanDate = parseAnyDate(data.laycanDate);
+  if (!laycanDate) {
+    issues.push({
+      type: 'invalid_validity_date',
+      severity: 'critical',
+      field: 'laycanDate',
+      message: 'Laycan/validity date is invalid.',
+      action: { label: 'Update date to +7 days', type: 'plus_seven_days', field: 'laycanDate' }
+    });
+  } else {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    if (laycanDate < now) {
+      issues.push({
+        type: 'invalid_validity_date',
+        severity: 'critical',
+        field: 'laycanDate',
+        message: 'Laycan/validity date appears expired.',
+        action: { label: 'Update date to +7 days', type: 'plus_seven_days', field: 'laycanDate' }
+      });
+    }
+  }
+
+  const subjectText = trimmed(data.emailSubject).toLowerCase();
+  const bodyText = buildEmailText(localizedFormData(data)).body.toLowerCase();
+  if (subjectText && bodyText && !bodyText.includes(subjectText.split(/\s+/)[0])) {
+    issues.push({
+      type: 'subject_body_mismatch',
+      severity: 'warning',
+      field: 'emailSubject',
+      message: 'Subject may not match body content.',
+      action: { label: 'Use previous value', type: 'use_previous', field: 'emailSubject' }
+    });
+  }
+
+  return {
+    issues,
+    hasCritical: issues.some((issue) => CRITICAL_RULES.has(issue.type) || issue.severity === 'critical'),
+    hasWarnings: issues.some((issue) => issue.severity === 'warning')
+  };
 }
 
 function migrateLegacyFormState(snapshot) {
@@ -231,8 +434,8 @@ function updateConditionalUI() {
   }
 }
 
-function buildHtmlPreviewDocument() {
-  const html = buildHtmlEmailDocument(collectFormData());
+function buildHtmlPreviewDocument(data = collectFormData()) {
+  const html = buildHtmlEmailDocument(data);
   const isDarkTheme = document.body.getAttribute('data-theme') === 'dark';
   const previewCanvas = isDarkTheme ? '#101926' : '#eef3f7';
   const previewText = isDarkTheme ? '#dbe6f3' : '#17314f';
@@ -329,7 +532,86 @@ async function copyHtmlForRichPaste(htmlDocument) {
 
 function refreshHtmlPreview() {
   htmlPreviewFrame.setAttribute('scrolling', 'yes');
-  htmlPreviewFrame.srcdoc = buildHtmlPreviewDocument();
+  const data = localizedFormData(collectFormData());
+  htmlPreviewFrame.srcdoc = buildHtmlPreviewDocument(data);
+}
+
+function applyFixAction(action) {
+  if (!action || !action.field) return;
+  const element = getFieldElement(action.field);
+  if (!element) return;
+
+  if (action.type === 'use_previous' && previousFieldValues[action.field]) {
+    element.value = previousFieldValues[action.field];
+  } else if (action.type === 'plus_seven_days') {
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + 7);
+    element.value = nextDate.toISOString().slice(0, 10);
+  } else if (action.type === 'use_default') {
+    const defaults = currentDefaults();
+    if (defaults[action.field] !== undefined) {
+      element.value = String(defaults[action.field]);
+    } else {
+      element.value = '';
+    }
+  }
+
+  pushWholeFormToStore();
+  refreshPreview();
+}
+
+function logValidationAnalytics(validation) {
+  const signature = validation.issues.map((issue) => issue.type).sort().join('|');
+  if (signature === analyticsIssueSignature) return;
+  analyticsIssueSignature = signature;
+
+  const issueTypes = validation.issues.map((issue) => issue.type);
+  if (window.dataLayer && Array.isArray(window.dataLayer)) {
+    window.dataLayer.push({
+      event: 'pre_send_validation',
+      issueTypes
+    });
+  }
+  if (issueTypes.length) {
+    console.info('Pre-send validation issues:', issueTypes);
+  }
+}
+
+function renderValidation(validation) {
+  if (!validationPanel || !validationList) return;
+  validationList.innerHTML = '';
+  validationPanel.classList.toggle('hidden', validation.issues.length === 0);
+  warningOverrideRow?.classList.toggle('hidden', !validation.hasWarnings || validation.hasCritical);
+
+  validation.issues.forEach((issue) => {
+    const row = document.createElement('div');
+    row.className = `validation-item ${issue.severity}`;
+
+    const text = document.createElement('div');
+    text.className = 'validation-message';
+    text.textContent = issue.message;
+    row.appendChild(text);
+
+    if (issue.action) {
+      const actionBtn = document.createElement('button');
+      actionBtn.type = 'button';
+      actionBtn.className = 'secondary validation-fix';
+      actionBtn.textContent = issue.action.label;
+      actionBtn.addEventListener('click', () => applyFixAction(issue.action));
+      row.appendChild(actionBtn);
+    }
+
+    validationList.appendChild(row);
+  });
+}
+
+function updateSendGuards(validation) {
+  const allowWarnings = warningOverrideInput?.checked;
+  sendButtons.forEach((button) => {
+    if (!button) return;
+    const blocked = validation.hasCritical || (validation.hasWarnings && !allowWarnings);
+    button.disabled = blocked;
+  });
 }
 
 function refreshPreview() {
@@ -337,12 +619,18 @@ function refreshPreview() {
   syncStructuredVesselSpecs();
 
   const data = collectFormData();
-  const emailText = buildEmailText(data);
+  const localizedData = localizedFormData(data);
+  const emailText = buildEmailText(localizedData);
 
   subjectPreview.textContent = emailText.subject;
   toPreview.textContent = trimmed(data.emailTo) || '—';
   ccPreview.textContent = trimmed(data.emailCc) || '—';
   emailPreview.textContent = emailText.body;
+
+  latestValidation = buildPresendValidation(data);
+  renderValidation(latestValidation);
+  logValidationAnalytics(latestValidation);
+  updateSendGuards(latestValidation);
 
   if (!htmlPreviewFrame.classList.contains('hidden')) {
     refreshHtmlPreview();
@@ -496,6 +784,10 @@ function handleAnyInput(event) {
   const target = event.target;
   if (!target || !('name' in target)) return;
 
+  if (target.type !== 'checkbox' && trimmed(target.value)) {
+    previousFieldValues[target.name] = target.value;
+  }
+
   if (target.id === 'vessel') {
     syncStructuredVesselSpecs();
   }
@@ -508,6 +800,7 @@ runtimeConfig = getRuntimeConfig();
 initializeSelects();
 applyTextDefaults();
 syncStructuredVesselSpecs();
+Object.assign(previousFieldValues, collectFormData());
 initializeSharedState({ forceDefaults: customizationDefaultsChanged() });
 initializeTheme();
 refreshPreview();
@@ -540,10 +833,11 @@ window.addEventListener('storage', (event) => {
 
 document.getElementById('tabRaw').addEventListener('click', () => switchView('raw'));
 document.getElementById('tabHtml').addEventListener('click', () => switchView('html'));
+warningOverrideInput?.addEventListener('change', () => updateSendGuards(latestValidation));
 
 document.getElementById('copyRawBtn').addEventListener('click', async () => {
   try {
-    const emailText = buildEmailText(collectFormData());
+    const emailText = buildEmailText(localizedFormData(collectFormData()));
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(emailText.body);
       showStatus('Raw mail copied to clipboard.');
@@ -557,7 +851,7 @@ document.getElementById('copyRawBtn').addEventListener('click', async () => {
 
 document.getElementById('copyHtmlBtn').addEventListener('click', async () => {
   try {
-    const html = buildHtmlEmailDocument(collectFormData());
+    const html = buildHtmlEmailDocument(localizedFormData(collectFormData()));
     const copiedRichHtml = await copyHtmlForRichPaste(html);
     if (copiedRichHtml) {
       showStatus('HTML mail copied as rich content (paste-ready).');
@@ -572,12 +866,20 @@ document.getElementById('copyHtmlBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('openDraftBtn').addEventListener('click', () => {
-  const url = buildMailtoUrl(collectFormData(), { includeBody: true });
+  if (latestValidation.hasCritical || (latestValidation.hasWarnings && !warningOverrideInput?.checked)) {
+    showStatus('Resolve critical issues or enable warning override before sending.');
+    return;
+  }
+  const url = buildMailtoUrl(localizedFormData(collectFormData()), { includeBody: true });
   window.location.href = url;
 });
 
 document.getElementById('openDraftHtmlBtn').addEventListener('click', async () => {
-  const formData = collectFormData();
+  if (latestValidation.hasCritical || (latestValidation.hasWarnings && !warningOverrideInput?.checked)) {
+    showStatus('Resolve critical issues or enable warning override before sending.');
+    return;
+  }
+  const formData = localizedFormData(collectFormData());
   const html = buildHtmlEmailDocument(formData);
   let copiedRichHtml = false;
   let copyFailed = false;
