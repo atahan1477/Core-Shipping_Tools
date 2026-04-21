@@ -449,6 +449,57 @@ async function applyCargoOfferAutofill() {
   setCargoOfferStatus(`AI auto-fill updated ${changedCount} field${changedCount === 1 ? '' : 's'}. Please review before sending.`);
 }
 
+function setFieldValue(name, value) {
+  const field = getFieldElement(name);
+  if (!field) return;
+
+  if (field.tagName === 'SELECT') {
+    const exists = Array.from(field.options).some((option) => option.value === value);
+    if (exists) field.value = value;
+    return;
+  }
+
+  if (field.type === 'checkbox') {
+    field.checked = Boolean(value);
+    return;
+  }
+
+  field.value = String(value ?? '');
+}
+
+function clearGeneratorFills() {
+  const defaults = currentDefaults();
+  const names = [
+    'account',
+    'cargo',
+    'laycanDate',
+    'pol',
+    'pod',
+    'currency',
+    'freightTerms',
+    'freightAmount',
+    'demdetAmount',
+    'terms',
+    'loadingDays',
+    'loadingTerms',
+    'dischargingDays',
+    'dischargingTerms',
+    'commissionPercentage',
+    'agentLoad',
+    'agentDischarge',
+    'extraClauses'
+  ];
+
+  names.forEach((name) => {
+    const fallback = name === 'extraClauses' ? '' : (defaults[name] ?? '');
+    setFieldValue(name, fallback);
+  });
+
+  pushWholeFormToStore();
+  refreshPreview();
+  setCargoOfferStatus('Generator fill fields were cleared to defaults.');
+}
+
 function showStatus(message) {
   statusEl.textContent = message;
   setTimeout(() => {
@@ -728,6 +779,10 @@ document.getElementById('openDraftHtmlBtn').addEventListener('click', async () =
 
 document.getElementById('autofillCargoBtn')?.addEventListener('click', () => {
   applyCargoOfferAutofill();
+});
+
+document.getElementById('clearGeneratorFillsBtn')?.addEventListener('click', () => {
+  clearGeneratorFills();
 });
 
 document.getElementById('clearCargoInputBtn')?.addEventListener('click', () => {
