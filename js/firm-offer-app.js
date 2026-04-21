@@ -449,55 +449,14 @@ async function applyCargoOfferAutofill() {
   setCargoOfferStatus(`AI auto-fill updated ${changedCount} field${changedCount === 1 ? '' : 's'}. Please review before sending.`);
 }
 
-function setFieldValue(name, value) {
-  const field = getFieldElement(name);
-  if (!field) return;
-
-  if (field.tagName === 'SELECT') {
-    const exists = Array.from(field.options).some((option) => option.value === value);
-    if (exists) field.value = value;
-    return;
-  }
-
-  if (field.type === 'checkbox') {
-    field.checked = Boolean(value);
-    return;
-  }
-
-  field.value = String(value ?? '');
-}
-
-function clearGeneratorFills() {
+function fullResetGenerator() {
   const defaults = currentDefaults();
-  const names = [
-    'account',
-    'cargo',
-    'laycanDate',
-    'pol',
-    'pod',
-    'currency',
-    'freightTerms',
-    'freightAmount',
-    'demdetAmount',
-    'terms',
-    'loadingDays',
-    'loadingTerms',
-    'dischargingDays',
-    'dischargingTerms',
-    'commissionPercentage',
-    'agentLoad',
-    'agentDischarge',
-    'extraClauses'
-  ];
-
-  names.forEach((name) => {
-    const fallback = name === 'extraClauses' ? '' : (defaults[name] ?? '');
-    setFieldValue(name, fallback);
-  });
-
+  initializeSelects(defaults);
+  applyTextDefaults(defaults);
+  syncStructuredVesselSpecs();
   pushWholeFormToStore();
   refreshPreview();
-  setCargoOfferStatus('Generator fill fields were cleared to defaults.');
+  setCargoOfferStatus('Firm Offer Generator fully reset to defaults.');
 }
 
 function showStatus(message) {
@@ -781,8 +740,8 @@ document.getElementById('autofillCargoBtn')?.addEventListener('click', () => {
   applyCargoOfferAutofill();
 });
 
-document.getElementById('clearGeneratorFillsBtn')?.addEventListener('click', () => {
-  clearGeneratorFills();
+document.getElementById('fullResetGeneratorBtn')?.addEventListener('click', () => {
+  fullResetGenerator();
 });
 
 document.getElementById('clearCargoInputBtn')?.addEventListener('click', () => {
