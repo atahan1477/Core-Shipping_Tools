@@ -21,6 +21,7 @@ const UPDATED_APPLICABLE_CONTRACT_TEXT = 'Carriers BN';
 const CUSTOMIZATION_SIGNATURE_KEY = 'coreShippingCustomizationSignatureV1';
 const OPENAI_KEY_STORAGE_KEY = 'coreShippingAutofillOpenAiKey';
 const OPENAI_MODEL_STORAGE_KEY = 'coreShippingAutofillOpenAiModel';
+const AI_PROVIDER_STORAGE_KEY = 'coreShippingAutofillAiProvider';
 
 let runtimeConfig = getRuntimeConfig();
 
@@ -52,6 +53,7 @@ const vesselSpecsPreview = document.getElementById('vesselSpecsPreview');
 const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
 const cargoOfferInput = document.getElementById('cargoOfferInput');
 const cargoOfferStatus = document.getElementById('cargoOfferStatus');
+const aiProviderInput = document.getElementById('aiProvider');
 const openaiApiKeyInput = document.getElementById('openaiApiKey');
 const openaiModelInput = document.getElementById('openaiModel');
 
@@ -367,6 +369,7 @@ function normalizeSpaces(value) {
 async function requestAiAutofill(cargoOfferText) {
   const apiKeyOverride = trimmed(openaiApiKeyInput?.value || '');
   const modelOverride = trimmed(openaiModelInput?.value || '');
+  const provider = trimmed(aiProviderInput?.value || 'openai') || 'openai';
   const response = await fetch('/api/ai-autofill', {
     method: 'POST',
     headers: {
@@ -375,6 +378,7 @@ async function requestAiAutofill(cargoOfferText) {
     body: JSON.stringify({
       cargoOffer: cargoOfferText,
       currentForm: collectFormData(),
+      provider,
       apiKey: apiKeyOverride,
       model: modelOverride
     })
@@ -602,6 +606,13 @@ function handleAnyInput(event) {
 
 function initializeAutofillSettings() {
   try {
+    if (aiProviderInput) {
+      aiProviderInput.value = localStorage.getItem(AI_PROVIDER_STORAGE_KEY) || 'openai';
+      aiProviderInput.addEventListener('change', () => {
+        localStorage.setItem(AI_PROVIDER_STORAGE_KEY, trimmed(aiProviderInput.value) || 'openai');
+      });
+    }
+
     if (openaiApiKeyInput) {
       openaiApiKeyInput.value = localStorage.getItem(OPENAI_KEY_STORAGE_KEY) || '';
       openaiApiKeyInput.addEventListener('change', () => {

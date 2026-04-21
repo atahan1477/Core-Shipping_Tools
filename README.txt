@@ -34,7 +34,9 @@ After upload:
 3. Hard refresh the site
 
 AI cargo-offer autofill (optional):
-- Set `OPENAI_API_KEY` in Vercel project environment variables.
-- Optional: set `OPENAI_AUTOFILL_MODEL` (default: `gpt-5-mini`).
+- Set `OPENAI_API_KEY` in Vercel env (or use `GEMINI_API_KEY` for Gemini).
+- Optional model envs:
+  - `OPENAI_AUTOFILL_MODEL` (default: `gpt-5-mini`)
+  - `GEMINI_AUTOFILL_MODEL` (default: `gemini-2.5-flash`)
 - The generator will call `/api/ai-autofill` when "AI auto-fill from cargo offer" is clicked.
-- If server env key is not configured, users can paste their own OpenAI API key/model in the Autofill panel (stored in browser localStorage).
+- If server env key is not configured, users can paste provider key/model in the Autofill panel (stored in browser localStorage).

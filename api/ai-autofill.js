@@ -1,6 +1,8 @@
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_AUTOFILL_MODEL || 'gpt-5-mini';
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/responses';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_AUTOFILL_MODEL || 'gemini-2.5-flash';
 
 function sendJson(response, status, payload) {
   response.statusCode = status;
@@ -135,6 +137,66 @@ async function callOpenAI(cargoOffer, currentForm, apiKey, model) {
   return normalizeFields(parsed?.fields);
 }
 
+async function callGemini(cargoOffer, currentForm, apiKey, model) {
+  const prompt = buildPrompt(cargoOffer, currentForm);
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }]
+        }
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            fields: {
+              type: 'OBJECT',
+              properties: {
+                account: { type: 'STRING' },
+                cargo: { type: 'STRING' },
+                laycanDate: { type: 'STRING' },
+                pol: { type: 'STRING' },
+                pod: { type: 'STRING' },
+                currency: { type: 'STRING' },
+                freightTerms: { type: 'STRING' },
+                freightAmount: { type: 'STRING' },
+                demdetAmount: { type: 'STRING' },
+                terms: { type: 'STRING' },
+                loadingDays: { type: 'STRING' },
+                loadingTerms: { type: 'STRING' },
+                dischargingDays: { type: 'STRING' },
+                dischargingTerms: { type: 'STRING' },
+                commissionPercentage: { type: 'STRING' },
+                agentLoad: { type: 'STRING' },
+                agentDischarge: { type: 'STRING' },
+                extraClauses: { type: 'STRING' }
+              }
+            }
+          },
+          required: ['fields']
+        }
+      }
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || 'Gemini request failed.');
+  }
+
+  const rawText = payload?.candidates?.[0]?.content?.parts?.map((part) => part?.text || '').join('') || '{}';
+  const parsed = JSON.parse(rawText);
+  return normalizeFields(parsed?.fields);
+}
+
 module.exports = async function handler(request, response) {
   if (request.method !== 'POST') {
     sendJson(response, 405, { ok: false, error: 'Method not allowed.' });
@@ -156,20 +218,25 @@ module.exports = async function handler(request, response) {
   }
 
   const requestApiKey = String(body?.apiKey || '').trim();
-  const activeApiKey = requestApiKey || OPENAI_API_KEY;
+  const provider = String(body?.provider || 'openai').trim().toLowerCase() === 'gemini' ? 'gemini' : 'openai';
+  const activeApiKey = requestApiKey || (provider === 'gemini' ? GEMINI_API_KEY : OPENAI_API_KEY);
   if (!activeApiKey) {
     sendJson(response, 503, {
       ok: false,
-      error: 'OPENAI_API_KEY is not configured. Add it in Vercel env, or paste API key in the Autofill panel.'
+      error: provider === 'gemini'
+        ? 'GEMINI_API_KEY is not configured. Add it in Vercel env, or paste Gemini API key in the Autofill panel.'
+        : 'OPENAI_API_KEY is not configured. Add it in Vercel env, or paste API key in the Autofill panel.'
     });
     return;
   }
 
   const requestModel = String(body?.model || '').trim();
-  const activeModel = requestModel || OPENAI_MODEL;
+  const activeModel = requestModel || (provider === 'gemini' ? GEMINI_MODEL : OPENAI_MODEL);
 
   try {
-    const fields = await callOpenAI(cargoOffer, body?.currentForm || {}, activeApiKey, activeModel);
+    const fields = provider === 'gemini'
+      ? await callGemini(cargoOffer, body?.currentForm || {}, activeApiKey, activeModel)
+      : await callOpenAI(cargoOffer, body?.currentForm || {}, activeApiKey, activeModel);
     sendJson(response, 200, { ok: true, fields });
   } catch (error) {
     sendJson(response, 502, {

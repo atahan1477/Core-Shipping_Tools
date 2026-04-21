@@ -848,11 +848,18 @@
                   <textarea id="cargoOfferInput" placeholder="Paste the full cargo offer email here, then click Auto-fill from cargo offer."></textarea>
                 </div>
                 <div class="field">
-                  <label for="openaiApiKey">OpenAI API key (optional override)</label>
-                  <input id="openaiApiKey" type="password" placeholder="sk-... (used when server env key is not set)" />
+                  <label for="aiProvider">AI provider</label>
+                  <select id="aiProvider">
+                    <option value="openai">OpenAI</option>
+                    <option value="gemini">Gemini</option>
+                  </select>
                 </div>
                 <div class="field">
-                  <label for="openaiModel">AI model (optional)</label>
+                  <label for="openaiApiKey">API key (optional override)</label>
+                  <input id="openaiApiKey" type="password" placeholder="OpenAI or Gemini key (used when server env key is not set)" />
+                </div>
+                <div class="field">
+                  <label for="openaiModel">Model (optional)</label>
                   <input id="openaiModel" placeholder="gpt-5-mini" />
                 </div>
                 <div class="field full">
