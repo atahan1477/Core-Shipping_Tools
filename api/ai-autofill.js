@@ -73,16 +73,16 @@ function buildPrompt(cargoOffer, currentForm) {
   ].join('\n');
 }
 
-async function callOpenAI(cargoOffer, currentForm) {
+async function callOpenAI(cargoOffer, currentForm, apiKey, model) {
   const prompt = buildPrompt(cargoOffer, currentForm);
   const response = await fetch(OPENAI_ENDPOINT, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model,
       input: prompt,
       text: {
         format: {
@@ -141,14 +141,6 @@ module.exports = async function handler(request, response) {
     return;
   }
 
-  if (!OPENAI_API_KEY) {
-    sendJson(response, 503, {
-      ok: false,
-      error: 'OPENAI_API_KEY is not configured.'
-    });
-    return;
-  }
-
   let body = {};
   try {
     body = await readJsonBody(request);
@@ -163,8 +155,21 @@ module.exports = async function handler(request, response) {
     return;
   }
 
+  const requestApiKey = String(body?.apiKey || '').trim();
+  const activeApiKey = requestApiKey || OPENAI_API_KEY;
+  if (!activeApiKey) {
+    sendJson(response, 503, {
+      ok: false,
+      error: 'OPENAI_API_KEY is not configured. Add it in Vercel env, or paste API key in the Autofill panel.'
+    });
+    return;
+  }
+
+  const requestModel = String(body?.model || '').trim();
+  const activeModel = requestModel || OPENAI_MODEL;
+
   try {
-    const fields = await callOpenAI(cargoOffer, body?.currentForm || {});
+    const fields = await callOpenAI(cargoOffer, body?.currentForm || {}, activeApiKey, activeModel);
     sendJson(response, 200, { ok: true, fields });
   } catch (error) {
     sendJson(response, 502, {

@@ -19,6 +19,8 @@ const LEGACY_THEME_STORAGE_KEY = 'firmOfferGeneratorTheme';
 const LEGACY_APPLICABLE_CONTRACT_TEXT = 'Clean Gencon 94 to apply';
 const UPDATED_APPLICABLE_CONTRACT_TEXT = 'Carriers BN';
 const CUSTOMIZATION_SIGNATURE_KEY = 'coreShippingCustomizationSignatureV1';
+const OPENAI_KEY_STORAGE_KEY = 'coreShippingAutofillOpenAiKey';
+const OPENAI_MODEL_STORAGE_KEY = 'coreShippingAutofillOpenAiModel';
 
 let runtimeConfig = getRuntimeConfig();
 
@@ -50,6 +52,8 @@ const vesselSpecsPreview = document.getElementById('vesselSpecsPreview');
 const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
 const cargoOfferInput = document.getElementById('cargoOfferInput');
 const cargoOfferStatus = document.getElementById('cargoOfferStatus');
+const openaiApiKeyInput = document.getElementById('openaiApiKey');
+const openaiModelInput = document.getElementById('openaiModel');
 
 const fieldElements = Array.from(form.querySelectorAll('input[name], select[name], textarea[name]'));
 const fieldNames = fieldElements.map((element) => element.name);
@@ -361,6 +365,8 @@ function normalizeSpaces(value) {
 }
 
 async function requestAiAutofill(cargoOfferText) {
+  const apiKeyOverride = trimmed(openaiApiKeyInput?.value || '');
+  const modelOverride = trimmed(openaiModelInput?.value || '');
   const response = await fetch('/api/ai-autofill', {
     method: 'POST',
     headers: {
@@ -368,7 +374,9 @@ async function requestAiAutofill(cargoOfferText) {
     },
     body: JSON.stringify({
       cargoOffer: cargoOfferText,
-      currentForm: collectFormData()
+      currentForm: collectFormData(),
+      apiKey: apiKeyOverride,
+      model: modelOverride
     })
   });
 
@@ -592,12 +600,31 @@ function handleAnyInput(event) {
   refreshPreview();
 }
 
+function initializeAutofillSettings() {
+  try {
+    if (openaiApiKeyInput) {
+      openaiApiKeyInput.value = localStorage.getItem(OPENAI_KEY_STORAGE_KEY) || '';
+      openaiApiKeyInput.addEventListener('change', () => {
+        localStorage.setItem(OPENAI_KEY_STORAGE_KEY, trimmed(openaiApiKeyInput.value));
+      });
+    }
+
+    if (openaiModelInput) {
+      openaiModelInput.value = localStorage.getItem(OPENAI_MODEL_STORAGE_KEY) || '';
+      openaiModelInput.addEventListener('change', () => {
+        localStorage.setItem(OPENAI_MODEL_STORAGE_KEY, trimmed(openaiModelInput.value));
+      });
+    }
+  } catch (_) {}
+}
+
 runtimeConfig = getRuntimeConfig();
 initializeSelects();
 applyTextDefaults();
 syncStructuredVesselSpecs();
 initializeSharedState({ forceDefaults: customizationDefaultsChanged() });
 initializeTheme();
+initializeAutofillSettings();
 refreshPreview();
 
 (async () => {

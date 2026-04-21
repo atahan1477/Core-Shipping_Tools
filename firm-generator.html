@@ -847,6 +847,14 @@
                   <label for="cargoOfferInput">Cargo offer email</label>
                   <textarea id="cargoOfferInput" placeholder="Paste the full cargo offer email here, then click Auto-fill from cargo offer."></textarea>
                 </div>
+                <div class="field">
+                  <label for="openaiApiKey">OpenAI API key (optional override)</label>
+                  <input id="openaiApiKey" type="password" placeholder="sk-... (used when server env key is not set)" />
+                </div>
+                <div class="field">
+                  <label for="openaiModel">AI model (optional)</label>
+                  <input id="openaiModel" placeholder="gpt-5-mini" />
+                </div>
                 <div class="field full">
                   <div style="display:flex; gap:10px; flex-wrap:wrap;">
                     <button id="autofillCargoBtn" type="button" class="secondary">AI auto-fill from cargo offer</button>
