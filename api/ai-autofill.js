@@ -3,6 +3,16 @@ const OPENAI_MODEL = process.env.OPENAI_AUTOFILL_MODEL || 'gpt-5-mini';
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/responses';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_AUTOFILL_MODEL || 'gemini-2.5-flash';
+const ALLOWED_FIELD_KEYS = [
+  'account', 'cargo', 'underDeck', 'cargoStackable', 'pcBasis',
+  'laycanDate', 'pol', 'pod', 'polSuffix', 'podSuffix',
+  'currency', 'freightTerms', 'freightAmount', 'demdetAmount', 'terms',
+  'loadingDays', 'loadingTerms', 'dischargingDays', 'dischargingTerms',
+  'fltLoadingText', 'fltDischargingText', 'congestionClause', 'includeCongestion',
+  'agentLoad', 'agentDischarge', 'commissionPercentage',
+  'applicableContract', 'extraClauses', 'finalClause',
+  'openingParagraph', 'emailSubject', 'markerLine', 'forLine', 'endOfferLine', 'closingParagraph'
+];
 
 function sendJson(response, status, payload) {
   response.statusCode = status;
@@ -26,28 +36,13 @@ async function readJsonBody(request) {
 function normalizeFields(value) {
   const safe = value && typeof value === 'object' ? value : {};
   const output = {};
-  [
-    'account',
-    'cargo',
-    'laycanDate',
-    'pol',
-    'pod',
-    'currency',
-    'freightTerms',
-    'freightAmount',
-    'demdetAmount',
-    'terms',
-    'loadingDays',
-    'loadingTerms',
-    'dischargingDays',
-    'dischargingTerms',
-    'commissionPercentage',
-    'agentLoad',
-    'agentDischarge',
-    'extraClauses'
-  ].forEach((key) => {
+  ALLOWED_FIELD_KEYS.forEach((key) => {
     const candidate = safe[key];
     if (candidate === undefined || candidate === null) return;
+    if (typeof candidate === 'boolean') {
+      output[key] = candidate;
+      return;
+    }
     output[key] = String(candidate).trim();
   });
 
@@ -121,7 +116,8 @@ function postProcessFields(fields, cargoOfferText) {
   return next;
 }
 
-function buildPrompt(cargoOffer, currentForm) {
+function buildPrompt(cargoOffer, currentForm, mode = 'safe_fill') {
+  const isFullAccess = mode === 'full_access';
   return [
     'You are an expert dry cargo chartering assistant.',
     'Extract and infer best possible values for a firm offer generator form.',
@@ -134,6 +130,10 @@ function buildPrompt(cargoOffer, currentForm) {
     '- Prefer existing currentForm defaults when source email has no better value.',
     '- Commission should be numeric only (e.g., 2.5).',
     '- Preserve shipping abbreviations like spot, shinc, pmt.',
+    isFullAccess
+      ? '- FULL ACCESS MODE: You may update/remove existing terms/clauses if they conflict with the cargo offer.'
+      : '- SAFE FILL MODE: Fill missing/improvable fields only; avoid deleting existing clauses.',
+    '- You may return any subset of allowed form fields.',
     '',
     'Current form snapshot:',
     JSON.stringify(currentForm || {}, null, 2),
@@ -143,8 +143,32 @@ function buildPrompt(cargoOffer, currentForm) {
   ].join('\n');
 }
 
-async function callOpenAI(cargoOffer, currentForm, apiKey, model) {
-  const prompt = buildPrompt(cargoOffer, currentForm);
+function buildOpenAiSchemaProperties() {
+  const props = {};
+  ALLOWED_FIELD_KEYS.forEach((key) => {
+    if (key === 'includeCongestion') {
+      props[key] = { type: 'boolean' };
+    } else {
+      props[key] = { type: 'string' };
+    }
+  });
+  return props;
+}
+
+function buildGeminiSchemaProperties() {
+  const props = {};
+  ALLOWED_FIELD_KEYS.forEach((key) => {
+    if (key === 'includeCongestion') {
+      props[key] = { type: 'BOOLEAN' };
+    } else {
+      props[key] = { type: 'STRING' };
+    }
+  });
+  return props;
+}
+
+async function callOpenAI(cargoOffer, currentForm, apiKey, model, mode) {
+  const prompt = buildPrompt(cargoOffer, currentForm, mode);
   const response = await fetch(OPENAI_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -165,26 +189,7 @@ async function callOpenAI(cargoOffer, currentForm, apiKey, model) {
               fields: {
                 type: 'object',
                 additionalProperties: false,
-                properties: {
-                  account: { type: 'string' },
-                  cargo: { type: 'string' },
-                  laycanDate: { type: 'string' },
-                  pol: { type: 'string' },
-                  pod: { type: 'string' },
-                  currency: { type: 'string' },
-                  freightTerms: { type: 'string' },
-                  freightAmount: { type: 'string' },
-                  demdetAmount: { type: 'string' },
-                  terms: { type: 'string' },
-                  loadingDays: { type: 'string' },
-                  loadingTerms: { type: 'string' },
-                  dischargingDays: { type: 'string' },
-                  dischargingTerms: { type: 'string' },
-                  commissionPercentage: { type: 'string' },
-                  agentLoad: { type: 'string' },
-                  agentDischarge: { type: 'string' },
-                  extraClauses: { type: 'string' }
-                },
+                properties: buildOpenAiSchemaProperties(),
                 required: []
               }
             },
@@ -205,8 +210,8 @@ async function callOpenAI(cargoOffer, currentForm, apiKey, model) {
   return postProcessFields(normalizeFields(parsed?.fields), cargoOffer);
 }
 
-async function callGemini(cargoOffer, currentForm, apiKey, model) {
-  const prompt = buildPrompt(cargoOffer, currentForm);
+async function callGemini(cargoOffer, currentForm, apiKey, model, mode) {
+  const prompt = buildPrompt(cargoOffer, currentForm, mode);
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -227,26 +232,7 @@ async function callGemini(cargoOffer, currentForm, apiKey, model) {
           properties: {
             fields: {
               type: 'OBJECT',
-              properties: {
-                account: { type: 'STRING' },
-                cargo: { type: 'STRING' },
-                laycanDate: { type: 'STRING' },
-                pol: { type: 'STRING' },
-                pod: { type: 'STRING' },
-                currency: { type: 'STRING' },
-                freightTerms: { type: 'STRING' },
-                freightAmount: { type: 'STRING' },
-                demdetAmount: { type: 'STRING' },
-                terms: { type: 'STRING' },
-                loadingDays: { type: 'STRING' },
-                loadingTerms: { type: 'STRING' },
-                dischargingDays: { type: 'STRING' },
-                dischargingTerms: { type: 'STRING' },
-                commissionPercentage: { type: 'STRING' },
-                agentLoad: { type: 'STRING' },
-                agentDischarge: { type: 'STRING' },
-                extraClauses: { type: 'STRING' }
-              }
+              properties: buildGeminiSchemaProperties()
             }
           },
           required: ['fields']
@@ -300,11 +286,12 @@ module.exports = async function handler(request, response) {
 
   const requestModel = String(body?.model || '').trim();
   const activeModel = requestModel || (provider === 'gemini' ? GEMINI_MODEL : OPENAI_MODEL);
+  const mode = String(body?.mode || 'safe_fill').trim() === 'full_access' ? 'full_access' : 'safe_fill';
 
   try {
     const fields = provider === 'gemini'
-      ? await callGemini(cargoOffer, body?.currentForm || {}, activeApiKey, activeModel)
-      : await callOpenAI(cargoOffer, body?.currentForm || {}, activeApiKey, activeModel);
+      ? await callGemini(cargoOffer, body?.currentForm || {}, activeApiKey, activeModel, mode)
+      : await callOpenAI(cargoOffer, body?.currentForm || {}, activeApiKey, activeModel, mode);
     sendJson(response, 200, { ok: true, fields });
   } catch (error) {
     sendJson(response, 502, {

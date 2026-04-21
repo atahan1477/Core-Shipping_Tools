@@ -40,3 +40,4 @@ AI cargo-offer autofill (optional):
   - `GEMINI_AUTOFILL_MODEL` (default: `gemini-2.5-flash`)
 - The generator will call `/api/ai-autofill` when "AI auto-fill from cargo offer" is clicked.
 - If server env key is not configured, users can paste provider key/model in the Autofill panel (stored in browser localStorage).
+- Optional mode toggle: **AI full draft control** lets AI add/remove terms/clauses; leave OFF for safer fill-only behavior.

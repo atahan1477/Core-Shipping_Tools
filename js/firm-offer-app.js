@@ -22,6 +22,7 @@ const CUSTOMIZATION_SIGNATURE_KEY = 'coreShippingCustomizationSignatureV1';
 const OPENAI_KEY_STORAGE_KEY = 'coreShippingAutofillOpenAiKey';
 const OPENAI_MODEL_STORAGE_KEY = 'coreShippingAutofillOpenAiModel';
 const AI_PROVIDER_STORAGE_KEY = 'coreShippingAutofillAiProvider';
+const AI_MODE_STORAGE_KEY = 'coreShippingAutofillAiMode';
 
 let runtimeConfig = getRuntimeConfig();
 
@@ -56,6 +57,7 @@ const cargoOfferStatus = document.getElementById('cargoOfferStatus');
 const aiProviderInput = document.getElementById('aiProvider');
 const openaiApiKeyInput = document.getElementById('openaiApiKey');
 const openaiModelInput = document.getElementById('openaiModel');
+const aiFullAccessModeInput = document.getElementById('aiFullAccessMode');
 
 const fieldElements = Array.from(form.querySelectorAll('input[name], select[name], textarea[name]'));
 const fieldNames = fieldElements.map((element) => element.name);
@@ -370,6 +372,7 @@ async function requestAiAutofill(cargoOfferText) {
   const apiKeyOverride = trimmed(openaiApiKeyInput?.value || '');
   const modelOverride = trimmed(openaiModelInput?.value || '');
   const provider = trimmed(aiProviderInput?.value || 'openai') || 'openai';
+  const mode = aiFullAccessModeInput?.checked ? 'full_access' : 'safe_fill';
   const response = await fetch('/api/ai-autofill', {
     method: 'POST',
     headers: {
@@ -379,6 +382,7 @@ async function requestAiAutofill(cargoOfferText) {
       cargoOffer: cargoOfferText,
       currentForm: collectFormData(),
       provider,
+      mode,
       apiKey: apiKeyOverride,
       model: modelOverride
     })
@@ -409,34 +413,30 @@ async function applyCargoOfferAutofill() {
     return;
   }
 
-  const updates = [
-    ['account', normalizeSpaces(parsed.account)],
-    ['cargo', normalizeSpaces(parsed.cargo)],
-    ['laycanDate', normalizeSpaces(parsed.laycanDate)],
-    ['pol', normalizeSpaces(parsed.pol)],
-    ['pod', normalizeSpaces(parsed.pod)],
-    ['freightAmount', normalizeSpaces(parsed.freightAmount)],
-    ['currency', normalizeSpaces(parsed.currency)],
-    ['freightTerms', normalizeSpaces(parsed.freightTerms)],
-    ['commissionPercentage', normalizeSpaces(parsed.commissionPercentage)],
-    ['loadingDays', normalizeSpaces(parsed.loadingDays)],
-    ['loadingTerms', normalizeSpaces(parsed.loadingTerms)],
-    ['dischargingDays', normalizeSpaces(parsed.dischargingDays)],
-    ['dischargingTerms', normalizeSpaces(parsed.dischargingTerms)],
-    ['demdetAmount', normalizeSpaces(parsed.demdetAmount)],
-    ['terms', normalizeSpaces(parsed.terms)],
-    ['agentLoad', normalizeSpaces(parsed.agentLoad)],
-    ['agentDischarge', normalizeSpaces(parsed.agentDischarge)],
-    ['extraClauses', String(parsed.extraClauses || '').trim()]
-  ];
+  const mode = aiFullAccessModeInput?.checked ? 'full_access' : 'safe_fill';
+  const allowEmpty = mode === 'full_access';
+  const updates = Object.entries(parsed || {});
 
   let changedCount = 0;
   updates.forEach(([name, value]) => {
-    if (!trimmed(value)) return;
     const field = getFieldElement(name);
     if (!field) return;
-    field.value = value;
-    changedCount += 1;
+
+    if (field.type === 'checkbox') {
+      const checked = Boolean(value);
+      if (field.checked !== checked) {
+        field.checked = checked;
+        changedCount += 1;
+      }
+      return;
+    }
+
+    const nextValue = String(value ?? '').trim();
+    if (!allowEmpty && !trimmed(nextValue)) return;
+    if (field.value !== nextValue) {
+      field.value = nextValue;
+      changedCount += 1;
+    }
   });
 
   if (!changedCount) {
@@ -446,7 +446,11 @@ async function applyCargoOfferAutofill() {
 
   pushWholeFormToStore();
   refreshPreview();
-  setCargoOfferStatus(`AI auto-fill updated ${changedCount} field${changedCount === 1 ? '' : 's'}. Please review before sending.`);
+  if (mode === 'full_access') {
+    setCargoOfferStatus(`AI full-control updated ${changedCount} field${changedCount === 1 ? '' : 's'} (including removals). Please review carefully.`);
+  } else {
+    setCargoOfferStatus(`AI auto-fill updated ${changedCount} field${changedCount === 1 ? '' : 's'}. Please review before sending.`);
+  }
 }
 
 function fullResetGenerator() {
@@ -616,6 +620,13 @@ function handleAnyInput(event) {
 
 function initializeAutofillSettings() {
   try {
+    if (aiFullAccessModeInput) {
+      aiFullAccessModeInput.checked = localStorage.getItem(AI_MODE_STORAGE_KEY) === 'full_access';
+      aiFullAccessModeInput.addEventListener('change', () => {
+        localStorage.setItem(AI_MODE_STORAGE_KEY, aiFullAccessModeInput.checked ? 'full_access' : 'safe_fill');
+      });
+    }
+
     if (aiProviderInput) {
       aiProviderInput.value = localStorage.getItem(AI_PROVIDER_STORAGE_KEY) || 'openai';
       aiProviderInput.addEventListener('change', () => {
