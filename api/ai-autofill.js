@@ -54,6 +54,73 @@ function normalizeFields(value) {
   return output;
 }
 
+function splitLines(text) {
+  return String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function looksLikeInstructionLine(line) {
+  const upper = line.toUpperCase();
+  return (
+    /\b(PLS|PLEASE|REVERT|HESITATE|ASKING|NOT FOR CIRCULATION|BEST OWNERS FRT|GOOD DAY)\b/.test(upper)
+    || line.length > 120
+  );
+}
+
+function looksLikeAccountLine(line) {
+  if (looksLikeInstructionLine(line)) return false;
+  return /\b(AGENCY|SHIPPING|BROKER|CHARTER|LOGISTIC|MARINE|FORWARDING|OPERATOR|TRADING|LINES?|CO\.?|COMPANY)\b/i.test(line);
+}
+
+function extractAccountFallback(cargoOfferText) {
+  const lines = splitLines(cargoOfferText);
+  if (!lines.length) return '';
+
+  const signatureSlice = lines.slice(-30);
+  const fromEmailLine = signatureSlice.find((line) => /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(line)) || '';
+  const fromEmail = (fromEmailLine.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i) || [])[0] || '';
+
+  const companyLine = signatureSlice.find((line) => looksLikeAccountLine(line));
+  if (companyLine) return companyLine;
+
+  if (fromEmail) {
+    const domain = fromEmail.split('@')[1] || '';
+    const stem = domain.split('.')[0] || '';
+    if (stem) return stem.replace(/[-_]+/g, ' ');
+  }
+
+  return '';
+}
+
+function cleanAccountValue(value) {
+  return String(value || '')
+    .replace(/^account\s*[:\-]\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isBadAccount(value) {
+  const account = cleanAccountValue(value);
+  if (!account) return true;
+  if (looksLikeInstructionLine(account)) return true;
+  if (account.split(/\s+/).length > 12) return true;
+  if (/[.!?].{20,}/.test(account)) return true;
+  return false;
+}
+
+function postProcessFields(fields, cargoOfferText) {
+  const next = { ...(fields || {}) };
+  const cleanedAccount = cleanAccountValue(next.account);
+  if (isBadAccount(cleanedAccount)) {
+    next.account = extractAccountFallback(cargoOfferText);
+  } else {
+    next.account = cleanedAccount;
+  }
+  return next;
+}
+
 function buildPrompt(cargoOffer, currentForm) {
   return [
     'You are an expert dry cargo chartering assistant.',
@@ -61,6 +128,7 @@ function buildPrompt(cargoOffer, currentForm) {
     'Only return JSON with a "fields" object, no prose.',
     'Rules:',
     '- Keep unknown values empty strings.',
+    '- account MUST be a short company/account name only (e.g., "SOMAMED Agency Tunisia"), never instruction sentences.',
     '- Use exact ports for pol/pod.',
     '- If quantity and load/discharge rates exist, estimate loadingDays/dischargingDays from max quantity.',
     '- Prefer existing currentForm defaults when source email has no better value.',
@@ -134,7 +202,7 @@ async function callOpenAI(cargoOffer, currentForm, apiKey, model) {
 
   const rawText = payload?.output_text || '{}';
   const parsed = JSON.parse(rawText);
-  return normalizeFields(parsed?.fields);
+  return postProcessFields(normalizeFields(parsed?.fields), cargoOffer);
 }
 
 async function callGemini(cargoOffer, currentForm, apiKey, model) {
@@ -194,7 +262,7 @@ async function callGemini(cargoOffer, currentForm, apiKey, model) {
 
   const rawText = payload?.candidates?.[0]?.content?.parts?.map((part) => part?.text || '').join('') || '{}';
   const parsed = JSON.parse(rawText);
-  return normalizeFields(parsed?.fields);
+  return postProcessFields(normalizeFields(parsed?.fields), cargoOffer);
 }
 
 module.exports = async function handler(request, response) {
