@@ -32,3 +32,8 @@ After upload:
 1. Commit to main
 2. Wait for Vercel redeploy
 3. Hard refresh the site
+
+AI cargo-offer autofill (optional):
+- Set `OPENAI_API_KEY` in Vercel project environment variables.
+- Optional: set `OPENAI_AUTOFILL_MODEL` (default: `gpt-5-mini`).
+- The generator will call `/api/ai-autofill` when "AI auto-fill from cargo offer" is clicked.

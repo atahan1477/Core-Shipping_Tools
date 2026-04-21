@@ -360,100 +360,62 @@ function normalizeSpaces(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function toTitleCase(value) {
-  return normalizeSpaces(value)
-    .toLowerCase()
-    .split(' ')
-    .map((word) => word ? word[0].toUpperCase() + word.slice(1) : '')
-    .join(' ');
-}
+async function requestAiAutofill(cargoOfferText) {
+  const response = await fetch('/api/ai-autofill', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      cargoOffer: cargoOfferText,
+      currentForm: collectFormData()
+    })
+  });
 
-function extractRoute(lines) {
-  for (const line of lines) {
-    const match = line.match(/\b([A-Z][A-Z\s.-]{2,})\s*\/\s*([A-Z][A-Z\s.-]{2,})\b/);
-    if (!match) continue;
-    return {
-      pol: toTitleCase(match[1]),
-      pod: toTitleCase(match[2])
-    };
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.error || 'AI autofill failed.');
   }
-  return { pol: '', pod: '' };
+
+  return payload.fields && typeof payload.fields === 'object' ? payload.fields : {};
 }
 
-function extractRates(lines) {
-  for (const line of lines) {
-    const match = line.match(/\b(\d{3,5})\s*\/\s*(\d{3,5})\b/);
-    if (!match) continue;
-    const loadRate = Number(match[1]);
-    const dischargeRate = Number(match[2]);
-    if (!Number.isFinite(loadRate) || !Number.isFinite(dischargeRate)) continue;
-    return { loadRate, dischargeRate };
-  }
-  return { loadRate: 0, dischargeRate: 0 };
-}
-
-function formatDays(value) {
-  if (!Number.isFinite(value) || value <= 0) return '';
-  const rounded = Math.round(value * 100) / 100;
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
-}
-
-function parseCargoOfferEmail(text) {
-  const raw = String(text || '');
-  const lines = raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const uppercaseLines = lines.map((line) => line.toUpperCase());
-
-  const route = extractRoute(uppercaseLines);
-  const rates = extractRates(uppercaseLines);
-
-  const cargoLine = uppercaseLines.find((line) => /\bMT\b/.test(line) && /\bCEMENT\b/.test(line)) || '';
-  const laycanLine = uppercaseLines.find((line) => /\bSPOT\b/.test(line) || /\bLAYCAN\b/.test(line)) || '';
-
-  const commissionMatch = raw.match(/(\d+(?:[.,]\d+)?)\s*%/);
-  const commission = commissionMatch ? commissionMatch[1].replace(',', '.') : '';
-
-  const accountLine = lines.find((line) => /agency/i.test(line) || /charterer/i.test(line) || /broker/i.test(line)) || '';
-  const quantityMatch = cargoLine.match(/(\d{3,6}\s*-\s*\d{3,6}\s*MT[^,\n]*)/i);
-  const cargo = normalizeSpaces(quantityMatch ? quantityMatch[1] : cargoLine);
-
-  const maxQtyMatch = cargoLine.match(/(\d{3,6})\s*-\s*(\d{3,6})\s*MT/i);
-  const maxQty = maxQtyMatch ? Number(maxQtyMatch[2]) : 0;
-
-  const loadingDays = maxQty && rates.loadRate ? formatDays(maxQty / rates.loadRate) : '';
-  const dischargingDays = maxQty && rates.dischargeRate ? formatDays(maxQty / rates.dischargeRate) : '';
-
-  return {
-    account: accountLine,
-    cargo,
-    laycanDate: normalizeSpaces(laycanLine),
-    pol: route.pol,
-    pod: route.pod,
-    commissionPercentage: commission,
-    loadingDays,
-    dischargingDays
-  };
-}
-
-function applyCargoOfferAutofill() {
+async function applyCargoOfferAutofill() {
   const input = cargoOfferInput?.value || '';
   if (!trimmed(input)) {
     setCargoOfferStatus('Paste a cargo offer email first.');
     return;
   }
 
-  const parsed = parseCargoOfferEmail(input);
+  setCargoOfferStatus('AI is reading cargo offer...');
+
+  let parsed = {};
+  try {
+    parsed = await requestAiAutofill(input);
+  } catch (error) {
+    setCargoOfferStatus(error.message || 'AI autofill failed.');
+    return;
+  }
+
   const updates = [
-    ['account', parsed.account],
-    ['cargo', parsed.cargo],
-    ['laycanDate', parsed.laycanDate],
-    ['pol', parsed.pol],
-    ['pod', parsed.pod],
-    ['commissionPercentage', parsed.commissionPercentage],
-    ['loadingDays', parsed.loadingDays],
-    ['dischargingDays', parsed.dischargingDays]
+    ['account', normalizeSpaces(parsed.account)],
+    ['cargo', normalizeSpaces(parsed.cargo)],
+    ['laycanDate', normalizeSpaces(parsed.laycanDate)],
+    ['pol', normalizeSpaces(parsed.pol)],
+    ['pod', normalizeSpaces(parsed.pod)],
+    ['freightAmount', normalizeSpaces(parsed.freightAmount)],
+    ['currency', normalizeSpaces(parsed.currency)],
+    ['freightTerms', normalizeSpaces(parsed.freightTerms)],
+    ['commissionPercentage', normalizeSpaces(parsed.commissionPercentage)],
+    ['loadingDays', normalizeSpaces(parsed.loadingDays)],
+    ['loadingTerms', normalizeSpaces(parsed.loadingTerms)],
+    ['dischargingDays', normalizeSpaces(parsed.dischargingDays)],
+    ['dischargingTerms', normalizeSpaces(parsed.dischargingTerms)],
+    ['demdetAmount', normalizeSpaces(parsed.demdetAmount)],
+    ['terms', normalizeSpaces(parsed.terms)],
+    ['agentLoad', normalizeSpaces(parsed.agentLoad)],
+    ['agentDischarge', normalizeSpaces(parsed.agentDischarge)],
+    ['extraClauses', String(parsed.extraClauses || '').trim()]
   ];
 
   let changedCount = 0;
@@ -472,7 +434,7 @@ function applyCargoOfferAutofill() {
 
   pushWholeFormToStore();
   refreshPreview();
-  setCargoOfferStatus(`Auto-fill updated ${changedCount} field${changedCount === 1 ? '' : 's'}. Please verify freight and dem/det manually.`);
+  setCargoOfferStatus(`AI auto-fill updated ${changedCount} field${changedCount === 1 ? '' : 's'}. Please review before sending.`);
 }
 
 function showStatus(message) {
