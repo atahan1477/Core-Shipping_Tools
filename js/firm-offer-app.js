@@ -48,6 +48,8 @@ const vesselSpecsField = document.getElementById('vesselSpecs');
 const vesselSpecsHtmlField = document.getElementById('vesselSpecsHtml');
 const vesselSpecsPreview = document.getElementById('vesselSpecsPreview');
 const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
+const cargoOfferInput = document.getElementById('cargoOfferInput');
+const cargoOfferStatus = document.getElementById('cargoOfferStatus');
 
 const fieldElements = Array.from(form.querySelectorAll('input[name], select[name], textarea[name]'));
 const fieldNames = fieldElements.map((element) => element.name);
@@ -349,6 +351,130 @@ function refreshPreview() {
   }
 }
 
+function setCargoOfferStatus(message) {
+  if (!cargoOfferStatus) return;
+  cargoOfferStatus.textContent = message;
+}
+
+function normalizeSpaces(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function toTitleCase(value) {
+  return normalizeSpaces(value)
+    .toLowerCase()
+    .split(' ')
+    .map((word) => word ? word[0].toUpperCase() + word.slice(1) : '')
+    .join(' ');
+}
+
+function extractRoute(lines) {
+  for (const line of lines) {
+    const match = line.match(/\b([A-Z][A-Z\s.-]{2,})\s*\/\s*([A-Z][A-Z\s.-]{2,})\b/);
+    if (!match) continue;
+    return {
+      pol: toTitleCase(match[1]),
+      pod: toTitleCase(match[2])
+    };
+  }
+  return { pol: '', pod: '' };
+}
+
+function extractRates(lines) {
+  for (const line of lines) {
+    const match = line.match(/\b(\d{3,5})\s*\/\s*(\d{3,5})\b/);
+    if (!match) continue;
+    const loadRate = Number(match[1]);
+    const dischargeRate = Number(match[2]);
+    if (!Number.isFinite(loadRate) || !Number.isFinite(dischargeRate)) continue;
+    return { loadRate, dischargeRate };
+  }
+  return { loadRate: 0, dischargeRate: 0 };
+}
+
+function formatDays(value) {
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function parseCargoOfferEmail(text) {
+  const raw = String(text || '');
+  const lines = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const uppercaseLines = lines.map((line) => line.toUpperCase());
+
+  const route = extractRoute(uppercaseLines);
+  const rates = extractRates(uppercaseLines);
+
+  const cargoLine = uppercaseLines.find((line) => /\bMT\b/.test(line) && /\bCEMENT\b/.test(line)) || '';
+  const laycanLine = uppercaseLines.find((line) => /\bSPOT\b/.test(line) || /\bLAYCAN\b/.test(line)) || '';
+
+  const commissionMatch = raw.match(/(\d+(?:[.,]\d+)?)\s*%/);
+  const commission = commissionMatch ? commissionMatch[1].replace(',', '.') : '';
+
+  const accountLine = lines.find((line) => /agency/i.test(line) || /charterer/i.test(line) || /broker/i.test(line)) || '';
+  const quantityMatch = cargoLine.match(/(\d{3,6}\s*-\s*\d{3,6}\s*MT[^,\n]*)/i);
+  const cargo = normalizeSpaces(quantityMatch ? quantityMatch[1] : cargoLine);
+
+  const maxQtyMatch = cargoLine.match(/(\d{3,6})\s*-\s*(\d{3,6})\s*MT/i);
+  const maxQty = maxQtyMatch ? Number(maxQtyMatch[2]) : 0;
+
+  const loadingDays = maxQty && rates.loadRate ? formatDays(maxQty / rates.loadRate) : '';
+  const dischargingDays = maxQty && rates.dischargeRate ? formatDays(maxQty / rates.dischargeRate) : '';
+
+  return {
+    account: accountLine,
+    cargo,
+    laycanDate: normalizeSpaces(laycanLine),
+    pol: route.pol,
+    pod: route.pod,
+    commissionPercentage: commission,
+    loadingDays,
+    dischargingDays
+  };
+}
+
+function applyCargoOfferAutofill() {
+  const input = cargoOfferInput?.value || '';
+  if (!trimmed(input)) {
+    setCargoOfferStatus('Paste a cargo offer email first.');
+    return;
+  }
+
+  const parsed = parseCargoOfferEmail(input);
+  const updates = [
+    ['account', parsed.account],
+    ['cargo', parsed.cargo],
+    ['laycanDate', parsed.laycanDate],
+    ['pol', parsed.pol],
+    ['pod', parsed.pod],
+    ['commissionPercentage', parsed.commissionPercentage],
+    ['loadingDays', parsed.loadingDays],
+    ['dischargingDays', parsed.dischargingDays]
+  ];
+
+  let changedCount = 0;
+  updates.forEach(([name, value]) => {
+    if (!trimmed(value)) return;
+    const field = getFieldElement(name);
+    if (!field) return;
+    field.value = value;
+    changedCount += 1;
+  });
+
+  if (!changedCount) {
+    setCargoOfferStatus('No supported fields were detected from the pasted email.');
+    return;
+  }
+
+  pushWholeFormToStore();
+  refreshPreview();
+  setCargoOfferStatus(`Auto-fill updated ${changedCount} field${changedCount === 1 ? '' : 's'}. Please verify freight and dem/det manually.`);
+}
+
 function showStatus(message) {
   statusEl.textContent = message;
   setTimeout(() => {
@@ -598,4 +724,13 @@ document.getElementById('openDraftHtmlBtn').addEventListener('click', async () =
   } else {
     showStatus('Draft opened. HTML copied as text only; rich paste may not be supported here.');
   }
+});
+
+document.getElementById('autofillCargoBtn')?.addEventListener('click', () => {
+  applyCargoOfferAutofill();
+});
+
+document.getElementById('clearCargoInputBtn')?.addEventListener('click', () => {
+  if (cargoOfferInput) cargoOfferInput.value = '';
+  setCargoOfferStatus('');
 });

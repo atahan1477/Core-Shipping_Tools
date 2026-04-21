@@ -839,6 +839,26 @@
           <form id="offerForm" class="form-sections">
             <div class="section">
               <div class="section-title">
+                <h3>0. Cargo Offer Auto-fill</h3>
+                <div class="section-tag">Paste charterer email</div>
+              </div>
+              <div class="grid">
+                <div class="field full">
+                  <label for="cargoOfferInput">Cargo offer email</label>
+                  <textarea id="cargoOfferInput" placeholder="Paste the full cargo offer email here, then click Auto-fill from cargo offer."></textarea>
+                </div>
+                <div class="field full">
+                  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button id="autofillCargoBtn" type="button" class="secondary">Auto-fill from cargo offer</button>
+                    <button id="clearCargoInputBtn" type="button" class="secondary">Clear pasted cargo text</button>
+                  </div>
+                  <div id="cargoOfferStatus" class="muted-note" style="margin-top:8px;"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">
                 <h3>1. Vessel & Cargo</h3>
                 <div class="section-tag">Specs auto-load from structured rows</div>
               </div>
