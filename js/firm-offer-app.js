@@ -35,7 +35,6 @@ const congestionToggleLabel = document.getElementById('congestionToggleLabel');
 const loadingTextLabel = document.getElementById('loadingTextLabel');
 const dischargingTextLabel = document.getElementById('dischargingTextLabel');
 const termMeaningNote = document.getElementById('termMeaningNote');
-const termStructureNote = document.getElementById('termStructureNote');
 const loadingDaysField = document.getElementById('loadingDaysField');
 const loadingTermsField = document.getElementById('loadingTermsField');
 const dischargingDaysField = document.getElementById('dischargingDaysField');
@@ -226,9 +225,6 @@ function updateConditionalUI() {
     termMeaningNote.textContent = behavior.meaning;
   }
 
-  if (termStructureNote) {
-    termStructureNote.textContent = behavior.structure;
-  }
 }
 
 function buildHtmlPreviewDocument() {
