@@ -530,7 +530,13 @@ async function reloadSharedCustomization(force = false) {
 document.getElementById('saveCustomizeBtn').addEventListener('click', async () => {
   try {
     const payload = buildCustomizationPayload();
-    const response = await pushRuntimeCustomizationToServer(payload);
+    const adminPassword = window.prompt('Enter admin password to save shared customization', '') ?? '';
+    if (!adminPassword.trim()) {
+      showStatus('Shared save cancelled: admin password is required.', true);
+      return;
+    }
+
+    const response = await pushRuntimeCustomizationToServer(payload, adminPassword);
     working = createWorkingCopy(getRuntimeConfig());
     selectedVessel = working.vesselOptions[0] || '';
     renderAll();
