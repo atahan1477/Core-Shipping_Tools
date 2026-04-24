@@ -134,6 +134,32 @@ export const BASE_TERM_BEHAVIOR = {
   }
 };
 
+export const BASE_TERM_CLAUSES = {
+  'Free In Free Out': {
+    detentionClause: 'Congestion, if any, to count as detention both ends.',
+    speedClause: ''
+  },
+  'Free In Liner Out': {
+    detentionClause: 'Congestion, if any, to count as detention at load port only.',
+    speedClause: 'Discharge to be performed as fast as vessel can discharge.'
+  },
+  'Liner In Free Out': {
+    detentionClause: 'Congestion, if any, to count as detention at discharge port only.',
+    speedClause: 'Loading to be performed as fast as vessel can load.'
+  },
+  'Liner In Liner Out': {
+    detentionClause: 'Congestion, if any, not to count as detention, unless otherwise agreed.',
+    speedClause: 'Loading/discharging to be performed as fast as vessel can load/discharge.'
+  }
+};
+
+const TERM_CLAUSE_ALIASES = {
+  'Free In Free Out': ['FIFO'],
+  'Free In Liner Out': ['FILO'],
+  'Liner In Free Out': ['LIFO'],
+  'Liner In Liner Out': ['LILO']
+};
+
 const customizationChannel = typeof BroadcastChannel !== 'undefined'
   ? new BroadcastChannel(CUSTOMIZATION_CHANNEL_NAME)
   : null;
@@ -458,6 +484,26 @@ function sanitizeTermBehavior(value, termsOptions) {
   return result;
 }
 
+function sanitizeTermClauses(value, termsOptions) {
+  const safeValue = value && typeof value === 'object' ? value : {};
+  const orderedTerms = uniqueTrimmedList([...(Array.isArray(termsOptions) ? termsOptions : []), ...Object.keys(BASE_TERM_CLAUSES)]);
+  const result = {};
+
+  orderedTerms.forEach((term) => {
+    const base = BASE_TERM_CLAUSES[term] || { detentionClause: '', speedClause: '' };
+    const aliases = TERM_CLAUSE_ALIASES[term] || [];
+    const overrideKey = [term, ...aliases].find((key) => safeValue[key] && typeof safeValue[key] === 'object');
+    const override = overrideKey ? safeValue[overrideKey] : {};
+
+    result[term] = {
+      detentionClause: override.detentionClause !== undefined ? String(override.detentionClause ?? '') : base.detentionClause,
+      speedClause: override.speedClause !== undefined ? String(override.speedClause ?? '') : base.speedClause
+    };
+  });
+
+  return result;
+}
+
 export function loadRuntimeCustomization() {
   try {
     const raw = localStorage.getItem(CUSTOMIZATION_STORAGE_KEY);
@@ -493,7 +539,8 @@ function sanitizeCustomization(value) {
     laytimeTermsOptions: uniqueTrimmedList(source.laytimeTermsOptions || baseConfig.laytimeTermsOptions),
     agentOptions: uniqueTrimmedList(source.agentOptions || baseConfig.agentOptions),
     formDefaults: sanitizeFormDefaults(source.formDefaults || baseConfig.formDefaults),
-    termBehavior: sanitizeTermBehavior(source.termBehavior || source.TERM_BEHAVIOR || {}, uniqueTrimmedList(source.termsOptions || baseConfig.termsOptions))
+    termBehavior: sanitizeTermBehavior(source.termBehavior || source.TERM_BEHAVIOR || {}, uniqueTrimmedList(source.termsOptions || baseConfig.termsOptions)),
+    termClauses: sanitizeTermClauses(source.termClauses || source.TERM_CLAUSES || {}, uniqueTrimmedList(source.termsOptions || baseConfig.termsOptions))
   };
 }
 
@@ -547,12 +594,19 @@ export function getRuntimeTermBehavior() {
   return sanitizeTermBehavior(customization.termBehavior || customization.TERM_BEHAVIOR || {}, termsOptions);
 }
 
+export function getRuntimeTermClauses() {
+  const customization = loadRuntimeCustomization();
+  const termsOptions = uniqueTrimmedList(customization.termsOptions || baseConfig.termsOptions);
+  return sanitizeTermClauses(customization.termClauses || customization.TERM_CLAUSES || {}, termsOptions);
+}
+
 export function getRuntimeConfig() {
   const customization = sanitizeCustomization({ ...baseConfig, ...loadRuntimeCustomization() });
   return {
     ...clone(baseConfig),
     ...clone(customization),
-    termBehavior: clone(customization.termBehavior)
+    termBehavior: clone(customization.termBehavior),
+    termClauses: clone(customization.termClauses)
   };
 }
 

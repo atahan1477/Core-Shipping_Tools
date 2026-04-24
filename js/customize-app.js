@@ -52,6 +52,7 @@ function showStatus(message, isError = false) {
 function createWorkingCopy(source) {
   const next = clone(source);
   next.termBehavior = clone(source.termBehavior || {});
+  next.termClauses = clone(source.termClauses || {});
   next.vesselStructuredSpecs = clone(source.vesselStructuredSpecs || {});
   return next;
 }
@@ -93,6 +94,21 @@ function ensureTermBehaviorRecords() {
         includeDischarging: true,
         meaning: `${term} selected.`,
         structure: 'Selected structure: day-based loading / discharging laytime fields.'
+      };
+    }
+  });
+}
+
+function ensureTermClauseRecords() {
+  if (!working.termClauses || typeof working.termClauses !== 'object') {
+    working.termClauses = {};
+  }
+
+  working.termsOptions.forEach((term) => {
+    if (!working.termClauses[term] || typeof working.termClauses[term] !== 'object') {
+      working.termClauses[term] = {
+        detentionClause: '',
+        speedClause: ''
       };
     }
   });
@@ -298,6 +314,7 @@ function renderOptionEditors() {
         working[group.key].splice(index, 1);
         if (group.key === 'termsOptions') {
           ensureTermBehaviorRecords();
+          ensureTermClauseRecords();
         }
         renderAll();
         refreshPreview();
@@ -327,6 +344,7 @@ function renderOptionEditors() {
 
 function renderTermBehaviorList() {
   ensureTermBehaviorRecords();
+  ensureTermClauseRecords();
   termBehaviorList.innerHTML = '';
 
   working.termsOptions.forEach((term) => {
@@ -381,19 +399,40 @@ function renderTermBehaviorList() {
     meaningField.appendChild(meaningLabel);
     meaningField.appendChild(meaningInput);
 
-    const structureField = document.createElement('div');
-    structureField.className = 'field full';
-    const structureLabel = document.createElement('label');
-    structureLabel.textContent = 'Structure note';
-    const structureInput = document.createElement('textarea');
-    structureInput.className = 'small';
-    structureInput.value = record.structure || '';
-    structureInput.addEventListener('input', () => {
-      working.termBehavior[term].structure = structureInput.value;
+    const clauseRecord = working.termClauses[term] || { detentionClause: '', speedClause: '' };
+    const detentionClauseField = document.createElement('div');
+    detentionClauseField.className = 'field full';
+    const detentionClauseLabel = document.createElement('label');
+    detentionClauseLabel.textContent = 'Detention clause';
+    const detentionClauseInput = document.createElement('textarea');
+    detentionClauseInput.className = 'small';
+    detentionClauseInput.value = clauseRecord.detentionClause || '';
+    detentionClauseInput.addEventListener('input', () => {
+      if (!working.termClauses[term]) {
+        working.termClauses[term] = { detentionClause: '', speedClause: '' };
+      }
+      working.termClauses[term].detentionClause = detentionClauseInput.value;
       refreshPreview();
     });
-    structureField.appendChild(structureLabel);
-    structureField.appendChild(structureInput);
+    detentionClauseField.appendChild(detentionClauseLabel);
+    detentionClauseField.appendChild(detentionClauseInput);
+
+    const speedClauseField = document.createElement('div');
+    speedClauseField.className = 'field full';
+    const speedClauseLabel = document.createElement('label');
+    speedClauseLabel.textContent = 'Speed clause';
+    const speedClauseInput = document.createElement('textarea');
+    speedClauseInput.className = 'small';
+    speedClauseInput.value = clauseRecord.speedClause || '';
+    speedClauseInput.addEventListener('input', () => {
+      if (!working.termClauses[term]) {
+        working.termClauses[term] = { detentionClause: '', speedClause: '' };
+      }
+      working.termClauses[term].speedClause = speedClauseInput.value;
+      refreshPreview();
+    });
+    speedClauseField.appendChild(speedClauseLabel);
+    speedClauseField.appendChild(speedClauseInput);
 
     const togglesField = document.createElement('div');
     togglesField.className = 'field full';
@@ -441,7 +480,8 @@ function renderTermBehaviorList() {
     grid.appendChild(meaningField);
     grid.appendChild(togglesField);
     wrapper.appendChild(grid);
-    wrapper.appendChild(structureField);
+    wrapper.appendChild(detentionClauseField);
+    wrapper.appendChild(speedClauseField);
     termBehaviorList.appendChild(wrapper);
   });
 }
@@ -453,6 +493,7 @@ function refreshPreview() {
 function renderAll() {
   alignAllVesselRowsToTemplate();
   ensureTermBehaviorRecords();
+  ensureTermClauseRecords();
   if (!working.vesselOptions.includes(selectedVessel)) {
     selectedVessel = working.vesselOptions[0] || '';
   }

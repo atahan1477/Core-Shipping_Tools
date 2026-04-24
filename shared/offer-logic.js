@@ -1,4 +1,4 @@
-import { getRuntimeTermBehavior } from './config.js';
+import { getRuntimeTermBehavior, getRuntimeTermClauses } from './config.js';
 
 export function trimmed(value) {
   return (value || '').trim();
@@ -286,6 +286,14 @@ export function isTextModeTerm(term) {
   return getTermBehavior(term).mode === 'text';
 }
 
+export function getTermClauses(term) {
+  const clauses = getRuntimeTermClauses();
+  const selected = clauses[trimmed(term)];
+  if (!selected || typeof selected !== 'object') return [];
+
+  return [trimmed(selected.detentionClause), trimmed(selected.speedClause)].filter(Boolean);
+}
+
 export function autoSubject(data) {
   const vessel = vesselFinal(data.vessel) || 'Core TBN';
   const pol = trimmed(data.pol) || 'POL';
@@ -353,6 +361,11 @@ export function buildOfferText(data) {
 
   if (isTextMode && data.includeCongestion && trimmed(data.congestionClause)) {
     lines.push(trimmed(data.congestionClause));
+  }
+
+  const selectedTermClauses = getTermClauses(data.terms);
+  if (selectedTermClauses.length) {
+    lines.push(...selectedTermClauses);
   }
 
   lines.push(
@@ -458,6 +471,7 @@ export function buildComputedOffer(data) {
     agentDischarge: trimmed(data.agentDischarge),
     commission: commissionFinal(data.commissionPercentage),
     applicableContract: trimmed(data.applicableContract),
+    termClauses: getTermClauses(data.terms),
     extraClauses: clauseLinesFromText(data.extraClauses),
     finalClauses: clauseLinesFromText(data.finalClause),
     finalClause: trimmed(data.finalClause),
@@ -542,6 +556,10 @@ export function buildTermsRowsHtml(details) {
   if (details.applicableContract) {
     rows.push(['Applicable contract', details.applicableContract]);
   }
+
+  (details.termClauses || []).forEach((clause) => {
+    rows.push(['Clause', clause]);
+  });
 
   return rows
     .filter(([, value]) => trimmed(value))
